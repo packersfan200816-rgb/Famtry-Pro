@@ -265,7 +265,7 @@
       <!-- HARDCODED HEIGHT CONTAINER FOR iOS SAFARI SCROLLING -->
       <div id="profileList" class="space-y-2 overflow-y-auto pr-1" style="max-height: 250px; -webkit-overflow-scrolling: touch;"></div>
       
-      <div class="border-t border-slate-700 pt-3 space-y-2">
+      <div class="border-t border-slate-700 pt-3 space-y-2 shrink-0">
         <p class="text-xs text-slate-400 font-semibold">Create New Profile</p>
         <input id="newProfileName" placeholder="Name" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs" />
         <input id="newProfilePin" type="password" maxlength="4" placeholder="4-Digit PIN" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs" />
@@ -376,7 +376,7 @@
         }
 
         return `
-        <div class="flex justify-between items-center p-2 bg-slate-900 rounded border border-slate-700 hover:border-blue-500 cursor-pointer mb-1.5" style="flex-shrink: 0;" onclick="requestPin('${safeName}')">
+        <div class="flex justify-between items-center p-2.5 bg-slate-900 rounded border border-slate-700 hover:border-blue-500 cursor-pointer mb-1.5" style="flex-shrink: 0;" onclick="requestPin('${safeName}')">
           <div class="flex items-center gap-1.5 min-w-0 pr-2">
             <span class="text-sm font-semibold truncate">${p.name}</span>
             ${p.isAdmin ? '<span class="text-[9px] bg-blue-500/20 text-blue-300 px-1 py-0.5 rounded font-medium shrink-0 uppercase tracking-wider">Admin</span>' : ''}
@@ -777,7 +777,7 @@
       });
     }
 
-    // --- CUSTOM SEARCHABLE DROPDOWNS (ASSORTMENT & STORE) ---
+    // --- CUSTOM SEARCHABLE DROPDOWNS (ASSORTMENT & STORE) FIX FOR iPHONE ---
 
     function renderAssortmentDropdownOptions(filterText = '') {
       const dropdown = document.getElementById('assortmentDropdown');
@@ -790,10 +790,11 @@
         return;
       }
 
+      // Replaced onmousedown with onclick so iOS touch events correctly fire before the keyboard blur
       dropdown.innerHTML = filtered.map(a => {
         const safeName = a.name.replace(/'/g, "\\'");
         return `<div class="px-3 py-2 text-sm cursor-pointer hover:bg-slate-700 text-slate-200 border-b border-slate-700/50 last:border-0" 
-             onmousedown="selectAssortment('${safeName}')">
+             onclick="selectAssortment('${safeName}')">
           ${a.name}
         </div>`;
       }).join('');
@@ -809,15 +810,18 @@
     }
 
     function hideAssortmentDropdown() {
+      // Increased timeout slightly so the iPhone has enough time to register the finger tap before hiding the box
       setTimeout(() => {
         const dd = document.getElementById('assortmentDropdown');
         if (dd) dd.classList.add('hidden');
-      }, 150);
+      }, 400);
     }
 
     function selectAssortment(name) {
-      document.getElementById('itemAssortment').value = name;
+      const input = document.getElementById('itemAssortment');
+      input.value = name;
       document.getElementById('assortmentDropdown').classList.add('hidden');
+      input.blur(); // Forces the iPhone keyboard to close instantly
     }
 
     function getUniqueStores() {
@@ -845,7 +849,7 @@
       dropdown.innerHTML = filtered.map(s => {
         const safeName = s.replace(/'/g, "\\'");
         return `<div class="px-3 py-2 text-sm cursor-pointer hover:bg-slate-700 text-slate-200 border-b border-slate-700/50 last:border-0" 
-             onmousedown="selectStore('${safeName}')">
+             onclick="selectStore('${safeName}')">
           ${s}
         </div>`;
       }).join('');
@@ -864,14 +868,41 @@
       setTimeout(() => {
         const dd = document.getElementById('storeDropdown');
         if (dd) dd.classList.add('hidden');
-      }, 150);
+      }, 400);
     }
 
     function selectStore(name) {
-      document.getElementById('itemStore').value = name;
+      const input = document.getElementById('itemStore');
+      input.value = name;
       document.getElementById('storeDropdown').classList.add('hidden');
+      input.blur(); // Forces the iPhone keyboard to close instantly
     }
 
+
+    // --- 7. ASSORTMENT MATH & REORDER LOGIC ---
+    function getAssortmentTotal(grpName) {
+      return items
+        .filter(i => i.assortment && i.assortment.trim().toLowerCase() === grpName.trim().toLowerCase())
+        .reduce((sum, curr) => {
+          let val = curr.mode === 'partial' ? (curr.currentUnits / (curr.fullCapacity || 1)) : (curr.currentCount || 0);
+          return sum + val;
+        }, 0);
+    }
+
+    function isReorderNeeded(item) {
+      if (item.assortment) {
+        const grp = assortments.find(a => a.name.trim().toLowerCase() === item.assortment.trim().toLowerCase());
+        if (grp) {
+          const totalInGrp = getAssortmentTotal(grp.name);
+          return totalInGrp <= grp.threshold;
+        }
+      }
+      if (item.mode === 'partial') {
+        const pctLeft = (item.currentUnits / (item.fullCapacity || 1)) * 100;
+        return pctLeft <= (item.reorderPct || 0);
+      }
+      return (item.currentCount || 0) <= (item.minCount || 0);
+    }
 
     // --- 8. INVENTORY RENDERING LOGIC (WITH ASSORTMENT GROUPING) ---
     function renderLists() {
@@ -888,7 +919,6 @@
       let standaloneItems = [];
       let groupedItems = {}; 
 
-      // 1. Sort items into individual list OR assortment groups
       items.forEach(item => {
         if (item.assortment && item.assortment.trim() !== '') {
            let aName = item.assortment.trim().toLowerCase();
@@ -906,7 +936,6 @@
         }
       });
 
-      // 2. Helper function to build the HTML card for any item
       function createCard(item, isGrouped = false, forceReorderBadge = false) {
         const fallbackImg = "https://cdn-icons-png.flaticon.com/512/679/679821.png";
         const thumb = item.image || fallbackImg;
@@ -963,7 +992,6 @@
         `;
       }
 
-      // 3. Render Assortment Groups (Unified Parent Cards)
       Object.values(groupedItems).forEach(group => {
         let total = group.items.reduce((sum, curr) => sum + (curr.mode === 'partial' ? (curr.currentUnits/(curr.fullCapacity||1)) : (curr.currentCount||0)), 0);
         total = Math.round(total * 100) / 100;
@@ -994,7 +1022,6 @@
             reorderCount++;
             reorderHtml += fullGroupHtml;
 
-            // Pick the cheapest item in the assortment to estimate shopping price
             if (group.items.length > 0) {
               let cheapestItem = group.items.reduce((prev, curr) => (Number(prev.price||0) < Number(curr.price||0)) ? prev : curr);
               if (cheapestItem) {
@@ -1006,7 +1033,6 @@
         }
       });
 
-      // 4. Render Standalone Items
       standaloneItems.forEach(item => {
         if (item.name.toLowerCase().includes(filter) || (item.store && item.store.toLowerCase().includes(filter))) {
           let needsReorder = false;
