@@ -7,7 +7,7 @@
   <link rel="manifest" href="manifest.json" />
   <meta name="theme-color" content="#1e293b" />
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Barcode Engine: QuaggaJS for robust 1D Grocery UPC/EAN scanning -->
+  <!-- Barcode Engine -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
   <!-- Firebase SDKs -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
@@ -383,11 +383,16 @@
       }).join('');
     }
 
-    // --- 5. DUAL DATABASE LOOKUP (UPCitemdb + Open Food Facts) ---
+    // --- 5. COMPREHENSIVE PRODUCT LOOKUP ENGINE ---
     async function fetchProductInfo(barcode) {
       let cleanCode = barcode.trim();
       
-      // 1. Try UPCitemdb First (Massive US database for groceries, pet food, and general goods)
+      // Generate standard variants (12-digit UPC vs 13-digit EAN padding)
+      const candidates = [cleanCode];
+      if (cleanCode.length === 12) candidates.push('0' + cleanCode);
+      else if (cleanCode.length === 13 && cleanCode.startsWith('0')) candidates.push(cleanCode.substring(1));
+
+      // Attempt 1: UPCitemdb (Massive database, but may block browser CORS)
       try {
         const upcCode = (cleanCode.length === 13 && cleanCode.startsWith('0')) ? cleanCode.substring(1) : cleanCode;
         const res = await fetch(`https://api.upcitemdb.com/prod/trial/lookup?upc=${upcCode}`);
@@ -404,38 +409,47 @@
           }
         }
       } catch (e) {
-        console.warn("UPCitemdb lookup failed", e);
+        console.warn("UPCitemdb lookup failed/blocked", e);
       }
 
-      // 2. Fallback to Open Food Facts (Great for European/specialty foods)
-      const candidates = [cleanCode];
-      if (cleanCode.length === 12) candidates.push('0' + cleanCode);
-      else if (cleanCode.length === 13 && cleanCode.startsWith('0')) candidates.push(cleanCode.substring(1));
+      // Attempt 2: Open Facts Network (Searches Food, Pet Food, and Household Products)
+      const offDomains = [
+        'world.openfoodfacts.org',
+        'world.openpetfoodfacts.org',
+        'world.openproductsfacts.org'
+      ];
 
-      for (const code of candidates) {
-        try {
-          const res = await fetch(`https://world.openfoodfacts.org/api/v0/product/${code}.json`);
-          if (!res.ok) continue;
-          const data = await res.json();
-          if (data && data.status === 1 && data.product) {
-            const p = data.product;
-            const brand = p.brands ? p.brands.split(',')[0].trim() : '';
-            const rawName = p.product_name || p.product_name_en || p.generic_name || '';
-            const fullName = brand && rawName && !rawName.toLowerCase().includes(brand.toLowerCase())
-              ? `${brand} ${rawName}`
-              : (rawName || brand);
+      for (const domain of offDomains) {
+        for (const code of candidates) {
+          try {
+            const res = await fetch(`https://${domain}/api/v0/product/${code}.json`);
+            if (!res.ok) continue;
+            const data = await res.json();
+            
+            if (data && data.status === 1 && data.product) {
+              const p = data.product;
+              const brand = p.brands ? p.brands.split(',')[0].trim() : '';
+              const rawName = p.product_name || p.product_name_en || p.generic_name || '';
+              const fullName = brand && rawName && !rawName.toLowerCase().includes(brand.toLowerCase())
+                ? `${brand} ${rawName}`
+                : (rawName || brand);
 
-            return {
-              barcode: code,
-              name: fullName || '',
-              image: p.image_front_small_url || p.image_front_thumb_url || p.image_front_url || '',
-              ballparkPrice: ''
-            };
+              if (fullName) {
+                return {
+                  barcode: barcode,
+                  name: fullName,
+                  image: p.image_front_small_url || p.image_front_thumb_url || p.image_front_url || '',
+                  ballparkPrice: ''
+                };
+              }
+            }
+          } catch (e) {
+            console.warn(`Lookup failed on ${domain} for ${code}`, e);
           }
-        } catch (e) {
-          console.warn("OFF lookup failed for code", code, e);
         }
       }
+      
+      // If no database has it, return null so the user can name it manually
       return null;
     }
 
@@ -467,9 +481,10 @@
       const productData = await fetchProductInfo(val);
       searchBtn.innerText = origText;
 
+      // Only pass the barcode to the name field if productData is completely null (fallback)
       openAddItemModal({
         barcode: productData ? productData.barcode : val,
-        name: productData && productData.name ? productData.name : val, // Drops UPC in name box only if BOTH databases fail to find it
+        name: productData && productData.name ? productData.name : val, 
         image: productData ? productData.image : '',
         ballparkPrice: productData ? productData.ballparkPrice : ''
       });
