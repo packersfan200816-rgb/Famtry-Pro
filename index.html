@@ -6,17 +6,12 @@
   <title>Family Pantry Tracker</title>
   <link rel="manifest" href="manifest.json" />
   <meta name="theme-color" content="#1e293b" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="Family Pantry" />
-
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Barcode Engine -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
   <!-- Firebase SDKs -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
-
   <style>
     #interactive.viewport {
       position: relative;
@@ -35,7 +30,7 @@
       left: 0;
       top: 0;
     }
-    /* Custom Scrollbar */
+    /* Custom Scrollbar for dropdowns */
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: #1e293b; border-radius: 4px; }
     ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
@@ -50,6 +45,7 @@
       <h1 class="text-lg font-bold tracking-tight">Family Pantry</h1>
     </div>
     <div class="flex items-center gap-2">
+      <!-- TAP NAME TO OPEN PROFILE SETTINGS -->
       <button onclick="openMyProfile()" id="currentUserDisplay" title="Edit Profile" class="text-xs bg-slate-700 hover:bg-slate-600 px-2.5 py-1 rounded-full border border-slate-600 font-medium text-emerald-400 transition cursor-pointer">Not logged in</button>
       <button onclick="openProfileModal()" class="text-xs bg-blue-600 hover:bg-blue-500 text-white px-2.5 py-1 rounded transition">Switch User</button>
     </div>
@@ -135,7 +131,7 @@
           <input id="itemImage" placeholder="https://..." class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5" />
         </div>
         <div class="grid grid-cols-2 gap-2">
-          <!-- SEARCHABLE STORE DROPDOWN -->
+          <!-- CUSTOM SEARCHABLE STORE DROPDOWN -->
           <div>
             <label class="block text-xs text-slate-400 mb-1">Store Name</label>
             <div class="relative">
@@ -145,7 +141,7 @@
               <div id="storeDropdown" class="hidden absolute z-50 w-full mt-1 bg-slate-800 border border-slate-600 rounded shadow-xl max-h-40 overflow-y-auto"></div>
             </div>
           </div>
-          <!-- SEARCHABLE ASSORTMENT DROPDOWN -->
+          <!-- CUSTOM SEARCHABLE ASSORTMENT DROPDOWN -->
           <div>
             <label class="block text-xs text-slate-400 mb-1">Assortment / Group</label>
             <div class="relative">
@@ -266,6 +262,7 @@
     <div class="bg-slate-800 border border-slate-700 rounded-xl p-5 max-w-sm w-full flex flex-col max-h-[85vh]">
       <h3 class="font-bold text-base border-b border-slate-700 pb-3 mb-3 shrink-0">Select or Add Profile</h3>
       
+      <!-- HARDCODED HEIGHT CONTAINER FOR iOS SAFARI SCROLLING -->
       <div id="profileList" class="space-y-2 overflow-y-auto pr-1" style="max-height: 250px; -webkit-overflow-scrolling: touch;"></div>
       
       <div class="border-t border-slate-700 pt-3 space-y-2 shrink-0">
@@ -318,7 +315,7 @@
   </div>
 
   <script>
-    // --- 1. FIREBASE SETUP & OFFLINE PERSISTENCE ---
+    // --- 1. FIREBASE SETUP ---
     const firebaseConfig = {
       apiKey: "AIzaSyDifh3hjDZ5_ElC2jSBGwnaTkZChsuri-I",
       authDomain: "grocery-inventory-pro.firebaseapp.com",
@@ -327,11 +324,6 @@
 
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
-
-    // Enable offline persistence for poor signal environments (pantries, grocery warehouses)
-    db.enablePersistence({ synchronizeTabs: true }).catch(err => {
-      console.warn("Firestore offline persistence unavailable:", err.code);
-    });
 
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(console.error);
@@ -487,4 +479,754 @@
       return true;
     }
 
-    // ---
+    // --- PROFILE SETTINGS (YOUR OWN PROFILE) ---
+    function openMyProfile() {
+      if (!currentUser) return;
+      const profile = profiles.find(p => p.name === currentUser);
+      if (!profile) return;
+      
+      document.getElementById('myProfileNameUI').innerText = profile.name;
+      document.getElementById('myProfileOldPin').value = '';
+      document.getElementById('myProfileNewPin').value = '';
+      document.getElementById('myProfileAdmin').checked = profile.isAdmin || currentUser === 'Daniel Rock';
+      
+      openModal('myProfileModal');
+    }
+
+    async function saveMyProfile() {
+      const profile = profiles.find(p => p.name === currentUser);
+      if (!profile) return;
+      
+      const oldPin = document.getElementById('myProfileOldPin').value;
+      const newPin = document.getElementById('myProfileNewPin').value;
+      const isAdmin = document.getElementById('myProfileAdmin').checked;
+      
+      if (oldPin !== profile.pin) {
+        return alert("Current PIN is incorrect. You must verify your current PIN to make changes.");
+      }
+      
+      let updatedPin = profile.pin;
+      if (newPin) {
+        if (newPin.length !== 4) return alert("New PIN must be exactly 4 digits.");
+        updatedPin = newPin;
+      }
+      
+      await db.collection('profiles').doc(profile.id).update({
+        pin: updatedPin,
+        isAdmin: isAdmin
+      });
+      
+      closeModal('myProfileModal');
+      alert("Profile updated successfully!");
+    }
+
+    // --- 3. FIRESTORE REAL-TIME SYNC ---
+    db.collection('items').onSnapshot(snap => {
+      items = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      renderLists();
+    });
+
+    db.collection('assortments').onSnapshot(snap => {
+      assortments = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      renderAssortments();
+    });
+
+    // --- 4. ITEM MODIFICATIONS & AUDIT TRAIL ---
+    async function logAction(itemId, itemName, actionText) {
+      if (!currentUser) return;
+      await db.collection('audit_logs').add({
+        itemId,
+        itemName,
+        user: currentUser,
+        action: actionText,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    }
+
+    async function adjustCount(id, delta) {
+      if (!checkUser()) return;
+      const item = items.find(i => i.id === id);
+      if (!item) return;
+
+      if (item.mode === 'partial') {
+        let newUnits = Math.max(0, +(item.currentUnits + delta).toFixed(1));
+        await db.collection('items').doc(id).update({ 
+          currentUnits: newUnits,
+          lastModifiedBy: currentUser,
+          lastModifiedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        logAction(id, item.name, `Adjusted remaining units to ${newUnits}`);
+      } else {
+        let newCount = Math.max(0, (item.currentCount || 0) + delta);
+        await db.collection('items').doc(id).update({ 
+          currentCount: newCount,
+          lastModifiedBy: currentUser,
+          lastModifiedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        logAction(id, item.name, `${delta > 0 ? 'Scanned IN' : 'Scanned OUT'} (Total: ${newCount})`);
+      }
+    }
+
+    async function showHistory(id) {
+      openModal('historyModal');
+      const container = document.getElementById('historyList');
+      container.innerHTML = '<p class="text-slate-400">Loading history...</p>';
+      
+      try {
+        const snap = await db.collection('audit_logs')
+          .where('itemId', '==', id)
+          .get();
+
+        if (snap.empty) {
+          container.innerHTML = '<p class="text-slate-400">No modifications logged yet.</p>';
+          return;
+        }
+
+        let logs = snap.docs.map(d => d.data());
+        logs.sort((a, b) => {
+          const tA = a.timestamp ? a.timestamp.toMillis() : 0;
+          const tB = b.timestamp ? b.timestamp.toMillis() : 0;
+          return tB - tA;
+        });
+
+        logs = logs.slice(0, 20);
+
+        container.innerHTML = logs.map(l => {
+          const date = l.timestamp ? l.timestamp.toDate().toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}) : 'Just now';
+          return `
+            <div class="border-b border-slate-700/60 pb-1.5">
+              <span class="text-emerald-400 font-semibold">${l.user}</span>: ${l.action}
+              <div class="text-[10px] text-slate-500">${date}</div>
+            </div>
+          `;
+        }).join('');
+        
+      } catch(err) {
+        console.error("History fetch error:", err);
+        container.innerHTML = '<p class="text-rose-400">Error loading history.</p>';
+      }
+    }
+
+    async function deleteItem() {
+      const id = document.getElementById('itemId').value;
+      if (!id) return;
+      if (confirm("Permanently delete this item? This action cannot be undone and it will be removed for everyone.")) {
+        await db.collection('items').doc(id).delete();
+        closeModal('itemModal');
+      }
+    }
+
+    // --- 5. COMPREHENSIVE PRODUCT LOOKUP ENGINE ---
+    async function fetchProductInfo(barcode) {
+      let cleanCode = barcode.trim();
+      
+      const candidates = [cleanCode];
+      if (cleanCode.length === 12) candidates.push('0' + cleanCode);
+      else if (cleanCode.length === 13 && cleanCode.startsWith('0')) candidates.push(cleanCode.substring(1));
+
+      try {
+        const upcCode = (cleanCode.length === 13 && cleanCode.startsWith('0')) ? cleanCode.substring(1) : cleanCode;
+        const res = await fetch(`https://api.upcitemdb.com/prod/trial/lookup?upc=${upcCode}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.items && data.items.length > 0) {
+            const item = data.items[0];
+            return {
+              barcode: barcode,
+              name: item.title || '',
+              image: (item.images && item.images.length > 0) ? item.images[0] : '',
+              ballparkPrice: item.lowest_recorded_price ? item.lowest_recorded_price.toFixed(2) : ''
+            };
+          }
+        }
+      } catch (e) {}
+
+      const offDomains = [
+        'world.openfoodfacts.org',
+        'world.openpetfoodfacts.org',
+        'world.openproductsfacts.org'
+      ];
+
+      for (const domain of offDomains) {
+        for (const code of candidates) {
+          try {
+            const res = await fetch(`https://${domain}/api/v0/product/${code}.json`);
+            if (!res.ok) continue;
+            const data = await res.json();
+            
+            if (data && data.status === 1 && data.product) {
+              const p = data.product;
+              const brand = p.brands ? p.brands.split(',')[0].trim() : '';
+              const rawName = p.product_name || p.product_name_en || p.generic_name || '';
+              const fullName = brand && rawName && !rawName.toLowerCase().includes(brand.toLowerCase())
+                ? `${brand} ${rawName}`
+                : (rawName || brand);
+
+              if (fullName) {
+                return {
+                  barcode: barcode,
+                  name: fullName,
+                  image: p.image_front_small_url || p.image_front_thumb_url || p.image_front_url || '',
+                  ballparkPrice: ''
+                };
+              }
+            }
+          } catch (e) {}
+        }
+      }
+      return null;
+    }
+
+    async function handleManualLookup() {
+      const inputEl = document.getElementById('barcodeInput');
+      const val = inputEl.value.trim();
+      if (!val) return;
+
+      const searchBtn = document.getElementById('searchBtn');
+      const origText = searchBtn.innerText;
+      searchBtn.innerText = 'Searching...';
+
+      const existing = items.find(i => 
+        i.barcode === val || 
+        (val.length === 12 && i.barcode === '0' + val) ||
+        (i.barcode && i.barcode.length === 12 && '0' + i.barcode === val) ||
+        i.name.toLowerCase() === val.toLowerCase()
+      );
+
+      if (existing) {
+        adjustCount(existing.id, 1);
+        inputEl.value = '';
+        searchBtn.innerText = origText;
+        return;
+      }
+
+      const productData = await fetchProductInfo(val);
+      searchBtn.innerText = origText;
+
+      openAddItemModal({
+        barcode: productData ? productData.barcode : val,
+        name: productData && productData.name ? productData.name : val, 
+        image: productData ? productData.image : '',
+        ballparkPrice: productData ? productData.ballparkPrice : ''
+      });
+      inputEl.value = '';
+    }
+
+    // --- 6. QUAGGA SCANNER ENGINE ---
+    function toggleCameraScanner() {
+      const container = document.getElementById('reader-container');
+      
+      if (isScannerRunning) {
+        Quagga.stop();
+        isScannerRunning = false;
+        container.classList.add('hidden');
+        return;
+      }
+
+      container.classList.remove('hidden');
+
+      Quagga.init({
+        inputStream: {
+          name: "Live",
+          type: "LiveStream",
+          target: document.querySelector('#interactive'),
+          constraints: {
+            facingMode: "environment",
+            width: { min: 640, ideal: 1280, max: 1920 },
+            height: { min: 480, ideal: 720, max: 1080 }
+          }
+        },
+        locator: {
+          patchSize: "medium",
+          halfSample: true
+        },
+        numOfWorkers: 2,
+        frequency: 10,
+        decoder: {
+          readers: [
+            "upc_reader",
+            "upc_e_reader",
+            "ean_reader",
+            "ean_8_reader",
+            "code_128_reader"
+          ]
+        },
+        locate: true
+      }, function(err) {
+        if (err) {
+          alert("Could not start camera. Check permissions and ensure https:// is used.");
+          container.classList.add('hidden');
+          isScannerRunning = false;
+          return;
+        }
+        Quagga.start();
+        isScannerRunning = true;
+      });
+
+      Quagga.onDetected(function(result) {
+        if (result && result.codeResult && result.codeResult.code) {
+          const barcode = result.codeResult.code;
+          Quagga.stop();
+          isScannerRunning = false;
+          container.classList.add('hidden');
+          
+          if (navigator.vibrate) navigator.vibrate(100);
+          document.getElementById('barcodeInput').value = barcode;
+          handleManualLookup();
+        }
+      });
+    }
+
+    // --- CUSTOM SEARCHABLE DROPDOWNS (ASSORTMENT & STORE) FIX FOR iPHONE ---
+
+    function renderAssortmentDropdownOptions(filterText = '') {
+      const dropdown = document.getElementById('assortmentDropdown');
+      if (!dropdown) return;
+      
+      const filtered = assortments.filter(a => a.name.toLowerCase().includes(filterText.toLowerCase()));
+      
+      if (filtered.length === 0) {
+        dropdown.innerHTML = `<div class="px-3 py-2 text-xs text-slate-500 italic">No matching assortments found</div>`;
+        return;
+      }
+
+      // Replaced onmousedown with onclick so iOS touch events correctly fire before the keyboard blur
+      dropdown.innerHTML = filtered.map(a => {
+        const safeName = a.name.replace(/'/g, "\\'");
+        return `<div class="px-3 py-2 text-sm cursor-pointer hover:bg-slate-700 text-slate-200 border-b border-slate-700/50 last:border-0" 
+             onclick="selectAssortment('${safeName}')">
+          ${a.name}
+        </div>`;
+      }).join('');
+    }
+
+    function showAssortmentDropdown() {
+      renderAssortmentDropdownOptions(document.getElementById('itemAssortment').value);
+      document.getElementById('assortmentDropdown').classList.remove('hidden');
+    }
+
+    function filterAssortmentDropdown() {
+      renderAssortmentDropdownOptions(document.getElementById('itemAssortment').value);
+    }
+
+    function hideAssortmentDropdown() {
+      // Increased timeout slightly so the iPhone has enough time to register the finger tap before hiding the box
+      setTimeout(() => {
+        const dd = document.getElementById('assortmentDropdown');
+        if (dd) dd.classList.add('hidden');
+      }, 400);
+    }
+
+    function selectAssortment(name) {
+      const input = document.getElementById('itemAssortment');
+      input.value = name;
+      document.getElementById('assortmentDropdown').classList.add('hidden');
+      input.blur(); // Forces the iPhone keyboard to close instantly
+    }
+
+    function getUniqueStores() {
+      const stores = new Set();
+      items.forEach(i => {
+        if (i.store && i.store.trim() !== '') {
+          stores.add(i.store.trim());
+        }
+      });
+      return Array.from(stores).sort();
+    }
+
+    function renderStoreDropdownOptions(filterText = '') {
+      const dropdown = document.getElementById('storeDropdown');
+      if (!dropdown) return;
+      
+      const uniqueStores = getUniqueStores();
+      const filtered = uniqueStores.filter(s => s.toLowerCase().includes(filterText.toLowerCase()));
+      
+      if (filtered.length === 0) {
+        dropdown.innerHTML = `<div class="px-3 py-2 text-xs text-slate-500 italic">No matching stores found</div>`;
+        return;
+      }
+
+      dropdown.innerHTML = filtered.map(s => {
+        const safeName = s.replace(/'/g, "\\'");
+        return `<div class="px-3 py-2 text-sm cursor-pointer hover:bg-slate-700 text-slate-200 border-b border-slate-700/50 last:border-0" 
+             onclick="selectStore('${safeName}')">
+          ${s}
+        </div>`;
+      }).join('');
+    }
+
+    function showStoreDropdown() {
+      renderStoreDropdownOptions(document.getElementById('itemStore').value);
+      document.getElementById('storeDropdown').classList.remove('hidden');
+    }
+
+    function filterStoreDropdown() {
+      renderStoreDropdownOptions(document.getElementById('itemStore').value);
+    }
+
+    function hideStoreDropdown() {
+      setTimeout(() => {
+        const dd = document.getElementById('storeDropdown');
+        if (dd) dd.classList.add('hidden');
+      }, 400);
+    }
+
+    function selectStore(name) {
+      const input = document.getElementById('itemStore');
+      input.value = name;
+      document.getElementById('storeDropdown').classList.add('hidden');
+      input.blur(); // Forces the iPhone keyboard to close instantly
+    }
+
+
+    // --- 7. ASSORTMENT MATH & REORDER LOGIC ---
+    function getAssortmentTotal(grpName) {
+      return items
+        .filter(i => i.assortment && i.assortment.trim().toLowerCase() === grpName.trim().toLowerCase())
+        .reduce((sum, curr) => {
+          let val = curr.mode === 'partial' ? (curr.currentUnits / (curr.fullCapacity || 1)) : (curr.currentCount || 0);
+          return sum + val;
+        }, 0);
+    }
+
+    function isReorderNeeded(item) {
+      if (item.assortment) {
+        const grp = assortments.find(a => a.name.trim().toLowerCase() === item.assortment.trim().toLowerCase());
+        if (grp) {
+          const totalInGrp = getAssortmentTotal(grp.name);
+          return totalInGrp <= grp.threshold;
+        }
+      }
+      if (item.mode === 'partial') {
+        const pctLeft = (item.currentUnits / (item.fullCapacity || 1)) * 100;
+        return pctLeft <= (item.reorderPct || 0);
+      }
+      return (item.currentCount || 0) <= (item.minCount || 0);
+    }
+
+    // --- 8. INVENTORY RENDERING LOGIC (WITH ASSORTMENT GROUPING) ---
+    function renderLists() {
+      const filter = document.getElementById('listFilter').value.toLowerCase();
+      const inventoryList = document.getElementById('inventoryContainer');
+      const reorderList = document.getElementById('reorderContainer');
+      const storeBreakdown = document.getElementById('storePriceBreakdown');
+
+      let invHtml = '';
+      let reorderHtml = '';
+      let reorderCount = 0;
+      let storeTotals = {};
+
+      let standaloneItems = [];
+      let groupedItems = {}; 
+
+      items.forEach(item => {
+        if (item.assortment && item.assortment.trim() !== '') {
+           let aName = item.assortment.trim().toLowerCase();
+           if (!groupedItems[aName]) {
+             const aConfig = assortments.find(a => a.name.trim().toLowerCase() === aName);
+             groupedItems[aName] = { 
+               name: aConfig ? aConfig.name : item.assortment.trim(),
+               threshold: aConfig ? aConfig.threshold : 0,
+               items: [] 
+             };
+           }
+           groupedItems[aName].items.push(item);
+        } else {
+           standaloneItems.push(item);
+        }
+      });
+
+      function createCard(item, isGrouped = false, forceReorderBadge = false) {
+        const fallbackImg = "https://cdn-icons-png.flaticon.com/512/679/679821.png";
+        const thumb = item.image || fallbackImg;
+        const lastModDate = (item.lastModifiedAt && item.lastModifiedAt.toDate) 
+          ? item.lastModifiedAt.toDate().toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}) 
+          : 'recently';
+
+        let needsReorder = forceReorderBadge;
+        if (!isGrouped) {
+          if (item.mode === 'partial') {
+            needsReorder = ((item.currentUnits / (item.fullCapacity || 1)) * 100) <= (item.reorderPct || 0);
+          } else {
+            needsReorder = (item.currentCount || 0) <= (item.minCount || 0);
+          }
+        }
+
+        if (!isGrouped && needsReorder) {
+            const storeName = item.store || 'Unassigned Store';
+            storeTotals[storeName] = (storeTotals[storeName] || 0) + (Number(item.price) || 0);
+        }
+
+        return `
+          <div class="bg-slate-800 border ${needsReorder && !isGrouped ? 'border-amber-500/50' : 'border-slate-700'} rounded-lg p-3 flex flex-col gap-2 ${isGrouped ? 'mt-2' : ''}">
+            <div class="flex items-center justify-between gap-3">
+              <img src="${thumb}" class="w-12 h-12 rounded object-cover bg-slate-900 border border-slate-700" onerror="this.src='${fallbackImg}'" />
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-1.5">
+                  <span class="font-bold text-sm truncate">${item.name}</span>
+                  ${needsReorder && !isGrouped ? '<span class="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded font-medium">REORDER</span>' : ''}
+                </div>
+                <div class="text-xs text-slate-400 flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
+                  <span>Store: <strong class="text-slate-300">${item.store || 'None'}</strong></span>
+                  <span>Price: <strong class="text-slate-300">${item.price ? '$' + Number(item.price).toFixed(2) : 'N/A'}</strong></span>
+                </div>
+                <div class="text-xs mt-1 text-slate-300">
+                  ${item.mode === 'partial' 
+                    ? `Remaining: <strong>${item.currentUnits}</strong> / ${item.fullCapacity} (${Math.round((item.currentUnits/(item.fullCapacity||1))*100)}%)` 
+                    : `In Stock: <strong>${item.currentCount}</strong>${!isGrouped ? `(Min: ${item.minCount})` : ''}`}
+                </div>
+              </div>
+              <div class="flex flex-col items-end gap-1.5">
+                <div class="flex items-center gap-1">
+                  <button onclick="adjustCount('${item.id}', -1)" class="w-7 h-7 bg-slate-700 hover:bg-slate-600 rounded flex items-center justify-center font-bold text-sm">-</button>
+                  <button onclick="adjustCount('${item.id}', 1)" class="w-7 h-7 bg-slate-700 hover:bg-slate-600 rounded flex items-center justify-center font-bold text-sm">+</button>
+                </div>
+                <button onclick="openEditItemModal('${item.id}')" class="text-[11px] text-slate-400 hover:text-amber-400 mt-1">Edit Item</button>
+              </div>
+            </div>
+            <div class="mt-1 pt-2 border-t border-slate-700/50 flex justify-between items-center text-[10px] text-slate-500">
+              <span>${item.lastModifiedBy ? `Updated by <strong class="text-slate-300">${item.lastModifiedBy}</strong> on${lastModDate}` : 'Added to inventory'}</span>
+              <button onclick="showHistory('${item.id}')" class="text-blue-400 hover:text-blue-300 font-medium">History</button>
+            </div>
+          </div>
+        `;
+      }
+
+      Object.values(groupedItems).forEach(group => {
+        let total = group.items.reduce((sum, curr) => sum + (curr.mode === 'partial' ? (curr.currentUnits/(curr.fullCapacity||1)) : (curr.currentCount||0)), 0);
+        total = Math.round(total * 100) / 100;
+        let needsReorder = total <= group.threshold;
+
+        let matchesFilter = group.name.toLowerCase().includes(filter) || group.items.some(i => i.name.toLowerCase().includes(filter) || (i.store && i.store.toLowerCase().includes(filter)));
+
+        if (matchesFilter) {
+          let groupHeader = `
+            <div class="bg-slate-800 border ${needsReorder ? 'border-amber-500/50' : 'border-blue-500/30'} rounded-lg p-3 flex flex-col gap-2 mb-2">
+              <div class="flex justify-between items-center pb-2">
+                <div>
+                  <span class="font-bold text-sm text-blue-400">📦 Assortment: ${group.name}</span>
+                  <div class="text-xs text-slate-400">Total in Pool: <strong class="${needsReorder ? 'text-amber-400' : 'text-emerald-400'}">${total}</strong> (Alert at: ${group.threshold})</div>
+                </div>
+                ${needsReorder ? '<span class="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded font-medium">REORDER</span>' : ''}
+              </div>
+              <div class="space-y-2 border-l-2 border-slate-700/50 pl-2 ml-1">
+          `;
+          
+          let groupContent = group.items.map(i => createCard(i, true)).join('');
+          let groupFooter = `</div></div>`;
+          
+          let fullGroupHtml = groupHeader + groupContent + groupFooter;
+          invHtml += fullGroupHtml;
+          
+          if (needsReorder) {
+            reorderCount++;
+            reorderHtml += fullGroupHtml;
+
+            if (group.items.length > 0) {
+              let cheapestItem = group.items.reduce((prev, curr) => (Number(prev.price||0) < Number(curr.price||0)) ? prev : curr);
+              if (cheapestItem) {
+                 const storeName = cheapestItem.store || 'Unassigned Store';
+                 storeTotals[storeName] = (storeTotals[storeName] || 0) + (Number(cheapestItem.price) || 0);
+              }
+            }
+          }
+        }
+      });
+
+      standaloneItems.forEach(item => {
+        if (item.name.toLowerCase().includes(filter) || (item.store && item.store.toLowerCase().includes(filter))) {
+          let needsReorder = false;
+          if (item.mode === 'partial') {
+            needsReorder = ((item.currentUnits / (item.fullCapacity || 1)) * 100) <= (item.reorderPct || 0);
+          } else {
+            needsReorder = (item.currentCount || 0) <= (item.minCount || 0);
+          }
+
+          let card = createCard(item, false);
+          invHtml += card;
+          if (needsReorder) {
+            reorderCount++;
+            reorderHtml += card;
+          }
+        }
+      });
+
+      inventoryList.innerHTML = invHtml || '<p class="text-slate-500 text-center py-6">Pantry is empty. Add or scan items above.</p>';
+      reorderList.innerHTML = reorderHtml || '<p class="text-emerald-400 text-center py-6">All items stocked above minimum thresholds!</p>';
+      document.getElementById('reorderCountBadge').innerText = reorderCount;
+
+      let totalsHtml = '';
+      for (const [st, val] of Object.entries(storeTotals)) {
+        totalsHtml += `<div class="flex justify-between py-0.5 border-b border-slate-700/50"><span>${st}:</span><span class="font-bold text-emerald-400">$${val.toFixed(2)}</span></div>`;
+      }
+      storeBreakdown.innerHTML = totalsHtml || '<p class="text-xs text-slate-500">No orders currently pending.</p>';
+    }
+
+    function renderAssortments() {
+      const container = document.getElementById('assortmentContainer');
+      container.innerHTML = assortments.map(a => {
+        const matches = items.filter(i => i.assortment && i.assortment.trim().toLowerCase() === a.name.trim().toLowerCase());
+        let total = matches.reduce((sum, curr) => sum + (curr.mode === 'partial' ? (curr.currentUnits / (curr.fullCapacity || 1)) : (curr.currentCount || 0)), 0);
+        total = Math.round(total * 100) / 100; 
+        const low = total <= a.threshold;
+        
+        const itemListHtml = matches.map(m => `
+          <div class="flex justify-between items-center text-xs py-1 border-b border-slate-700/30 last:border-0">
+            <span class="text-slate-300 truncate pr-2">${m.name}</span>
+            <span class="text-slate-400 font-mono shrink-0">${m.mode === 'partial' ? m.currentUnits : m.currentCount} qty</span>
+          </div>
+        `).join('');
+
+        return `
+          <div class="bg-slate-800 rounded-lg border ${low ? 'border-rose-500/50' : 'border-slate-700'} overflow-hidden mb-2">
+            <div class="p-3 flex justify-between items-center cursor-pointer hover:bg-slate-700/50 transition" onclick="document.getElementById('assort_items_${a.id}').classList.toggle('hidden')">
+              <div>
+                <p class="font-bold text-sm">${a.name} <span class="text-xs text-slate-500 ml-1">▼</span></p>
+                <p class="text-xs text-slate-400">Pool count: <strong class="${low ? 'text-rose-400' : 'text-emerald-400'}">${total}</strong> (Alert threshold: ${a.threshold})</p>
+              </div>
+              <button onclick="deleteAssortment(event, '${a.id}')" class="text-slate-500 hover:text-rose-400 text-xs px-2 py-1">&times; Remove</button>
+            </div>
+            <div id="assort_items_${a.id}" class="hidden bg-slate-900/50 px-3 py-2 border-t border-slate-700">
+              ${itemListHtml || '<p class="text-xs text-slate-500 italic">No items assigned to this assortment yet.</p>'}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // --- 9. MODALS & DATA SAVING ---
+    function switchTab(t) {
+      ['inventory', 'reorder', 'assortments'].forEach(tab => {
+        document.getElementById(`view-${tab}`).classList.add('hidden');
+        document.getElementById(`tab-${tab}`).classList.replace('text-emerald-400', 'text-slate-400');
+        document.getElementById(`tab-${tab}`).classList.replace('border-emerald-500', 'border-transparent');
+      });
+      document.getElementById(`view-${t}`).classList.remove('hidden');
+      document.getElementById(`tab-${t}`).classList.replace('text-slate-400', 'text-emerald-400');
+      document.getElementById(`tab-${t}`).classList.replace('border-transparent', 'border-emerald-500');
+    }
+
+    function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+    function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+    
+    function openProfileModal() { 
+      renderProfiles(); 
+      openModal('profileModal'); 
+    }
+
+    function toggleModeFields() {
+      const m = document.getElementById('itemMode').value;
+      if (m === 'partial') {
+        document.getElementById('countFields').classList.add('hidden');
+        document.getElementById('partialFields').classList.remove('hidden');
+      } else {
+        document.getElementById('countFields').classList.remove('hidden');
+        document.getElementById('partialFields').classList.add('hidden');
+      }
+    }
+
+    function openAddItemModal(prefill = {}) {
+      if (!checkUser()) return;
+      document.getElementById('itemModalTitle').innerText = "Add New Item";
+      document.getElementById('itemId').value = '';
+      document.getElementById('itemBarcode').value = prefill.barcode || '';
+      document.getElementById('itemName').value = prefill.name || '';
+      document.getElementById('itemImage').value = prefill.image || '';
+      document.getElementById('itemStore').value = '';
+      document.getElementById('itemAssortment').value = '';
+      document.getElementById('itemPrice').value = '';
+      document.getElementById('itemBallparkPrice').value = prefill.ballparkPrice || '';
+      document.getElementById('itemMode').value = 'count';
+      document.getElementById('itemCurrentCount').value = 1;
+      document.getElementById('itemMinCount').value = 1;
+      document.getElementById('itemFullCapacity').value = 10;
+      document.getElementById('itemCurrentUnits').value = 10;
+      document.getElementById('itemReorderPct').value = 30;
+      toggleModeFields();
+      
+      document.getElementById('deleteItemBtn').classList.add('hidden');
+      
+      openModal('itemModal');
+    }
+
+    function openEditItemModal(id) {
+      if (!checkUser()) return;
+      const i = items.find(x => x.id === id);
+      if (!i) return;
+      document.getElementById('itemModalTitle').innerText = "Edit Item";
+      document.getElementById('itemId').value = i.id;
+      document.getElementById('itemBarcode').value = i.barcode || '';
+      document.getElementById('itemName').value = i.name || '';
+      document.getElementById('itemImage').value = i.image || '';
+      document.getElementById('itemStore').value = i.store || '';
+      document.getElementById('itemAssortment').value = i.assortment || '';
+      document.getElementById('itemPrice').value = i.price || '';
+      document.getElementById('itemBallparkPrice').value = i.ballparkPrice || '';
+      document.getElementById('itemMode').value = i.mode || 'count';
+      document.getElementById('itemCurrentCount').value = i.currentCount || 0;
+      document.getElementById('itemMinCount').value = i.minCount || 0;
+      document.getElementById('itemFullCapacity').value = i.fullCapacity || 10;
+      document.getElementById('itemCurrentUnits').value = i.currentUnits || 0;
+      document.getElementById('itemReorderPct').value = i.reorderPct || 30;
+      toggleModeFields();
+      
+      if (isUserAdmin()) {
+        document.getElementById('deleteItemBtn').classList.remove('hidden');
+      } else {
+        document.getElementById('deleteItemBtn').classList.add('hidden');
+      }
+
+      openModal('itemModal');
+    }
+
+    async function saveItem() {
+      const id = document.getElementById('itemId').value;
+      const docData = {
+        barcode: document.getElementById('itemBarcode').value.trim(),
+        name: document.getElementById('itemName').value.trim(),
+        image: document.getElementById('itemImage').value.trim(),
+        store: document.getElementById('itemStore').value.trim(),
+        assortment: document.getElementById('itemAssortment').value.trim(),
+        price: parseFloat(document.getElementById('itemPrice').value) || 0,
+        ballparkPrice: parseFloat(document.getElementById('itemBallparkPrice').value) || 0,
+        mode: document.getElementById('itemMode').value,
+        currentCount: parseInt(document.getElementById('itemCurrentCount').value) || 0,
+        minCount: parseInt(document.getElementById('itemMinCount').value) || 0,
+        fullCapacity: parseFloat(document.getElementById('itemFullCapacity').value) || 1,
+        currentUnits: parseFloat(document.getElementById('itemCurrentUnits').value) || 0,
+        reorderPct: parseInt(document.getElementById('itemReorderPct').value) || 0,
+        lastModifiedBy: currentUser,
+        lastModifiedAt: firebase.firestore.FieldValue.serverTimestamp()
+      };
+
+      if (!docData.name) return alert('Item name required');
+
+      if (id) {
+        await db.collection('items').doc(id).update(docData);
+        logAction(id, docData.name, 'Edited item details');
+      } else {
+        const ref = await db.collection('items').add(docData);
+        logAction(ref.id, docData.name, 'Added item to stock');
+      }
+      closeModal('itemModal');
+    }
+
+    function openCreateAssortmentModal() { openModal('assortmentModal'); }
+    async function saveAssortment() {
+      const name = document.getElementById('assortmentName').value.trim();
+      const threshold = parseInt(document.getElementById('assortmentThreshold').value) || 1;
+      if (!name) return;
+      await db.collection('assortments').add({ name, threshold });
+      document.getElementById('assortmentName').value = '';
+      closeModal('assortmentModal');
+    }
+
+    async function deleteAssortment(event, id) {
+      event.stopPropagation();
+      if (confirm('Delete this assortment?')) {
+        await db.collection('assortments').doc(id).delete();
+      }
+    }
+  </script>
+</body>
+</html>
