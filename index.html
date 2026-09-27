@@ -243,7 +243,6 @@
       <div class="space-y-3">
         <div>
           <label class="block text-xs text-slate-400 mb-1">User PIN</label>
-          <!-- Using text input so Admin can clearly see the numbers -->
           <input id="adminEditUserPin" type="text" maxlength="4" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-sm tracking-widest font-mono" />
         </div>
         <label class="flex items-center gap-2 cursor-pointer pt-2 border-t border-slate-700">
@@ -264,9 +263,9 @@
       <h3 class="font-bold text-base border-b border-slate-700 pb-3 mb-3 shrink-0">Select or Add Profile</h3>
       
       <!-- HARDCODED HEIGHT CONTAINER FOR iOS SAFARI SCROLLING -->
-      <div id="profileList" class="space-y-2 overflow-y-auto pr-1" style="max-height: 220px; -webkit-overflow-scrolling: touch;"></div>
+      <div id="profileList" class="space-y-2 overflow-y-auto pr-1" style="max-height: 250px; -webkit-overflow-scrolling: touch;"></div>
       
-      <div class="border-t border-slate-700 pt-3 space-y-2">
+      <div class="border-t border-slate-700 pt-3 space-y-2 shrink-0">
         <p class="text-xs text-slate-400 font-semibold">Create New Profile</p>
         <input id="newProfileName" placeholder="Name" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs" />
         <input id="newProfilePin" type="password" maxlength="4" placeholder="4-Digit PIN" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs" />
@@ -362,21 +361,33 @@
       const list = document.getElementById('profileList');
       const adminMode = isUserAdmin();
       
-      list.innerHTML = profiles.map(p => `
-        <div class="flex justify-between items-center p-2.5 bg-slate-900 rounded border border-slate-700 hover:border-blue-500 cursor-pointer" style="flex-shrink: 0;" onclick="requestPin('${p.name.replace(/'/g, "\\'")}')">
-          <div class="flex items-center gap-2">
-            <span class="text-sm font-semibold">${p.name}</span>
-            ${p.isAdmin ? '<span class="text-[10px] bg-blue-500/20 text-blue-300 px-1.5 py-0.5 rounded font-medium">Admin</span>' : ''}
+      list.innerHTML = profiles.map(p => {
+        const safeName = p.name.replace(/'/g, "\\'");
+        const isOwner = p.name === 'Daniel Rock';
+        
+        // Assemble mobile-friendly action buttons
+        let actionsHtml = '';
+        if (adminMode) {
+          actionsHtml += `<button onclick="openAdminEditUser(event, '${p.id}', '${safeName}', '${p.pin}', ${!!p.isAdmin})" class="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-[11px] text-blue-400 hover:text-blue-300 font-semibold shadow-sm transition">Edit</button>`;
+          if (!isOwner) {
+            actionsHtml += `<button onclick="deleteProfile(event, '${p.id}', '${safeName}')" class="bg-rose-900/40 border border-rose-800/80 rounded px-2 py-1 text-[11px] text-rose-400 hover:text-rose-300 font-bold shadow-sm transition">&times;</button>`;
+          }
+        } else {
+          actionsHtml = `<span class="text-[11px] text-slate-500">Tap to login</span>`;
+        }
+
+        return `
+        <div class="flex justify-between items-center p-2 bg-slate-900 rounded border border-slate-700 hover:border-blue-500 cursor-pointer mb-1.5" style="flex-shrink: 0;" onclick="requestPin('${safeName}')">
+          <div class="flex items-center gap-1.5 min-w-0 pr-2">
+            <span class="text-sm font-semibold truncate">${p.name}</span>
+            ${p.isAdmin ? '<span class="text-[9px] bg-blue-500/20 text-blue-300 px-1 py-0.5 rounded font-medium shrink-0 uppercase tracking-wider">Admin</span>' : ''}
           </div>
-          <div class="flex items-center gap-2">
-            <span class="text-[11px] text-slate-500">Tap to login</span>
-            ${adminMode && p.name !== 'Daniel Rock' 
-              ? `<button onclick="openAdminEditUser(event, '${p.id}', '${p.name.replace(/'/g, "\\'")}', '${p.pin}',${!!p.isAdmin})" class="text-blue-400 hover:text-blue-300 p-1 text-xs underline font-medium">Edit</button>
-                 <button onclick="deleteProfile(event, '${p.id}', '${p.name.replace(/'/g, "\\'")}')" class="text-rose-500 hover:text-rose-400 p-1 font-bold text-lg leading-none" title="Delete Profile">&times;</button>` 
-              : ''}
+          <div class="flex items-center gap-1.5 shrink-0">
+            ${actionsHtml}
           </div>
         </div>
-      `).join('');
+        `;
+      }).join('');
     }
 
     function createProfile() {
@@ -410,7 +421,18 @@
       document.getElementById('adminEditUserId').value = id;
       document.getElementById('adminEditUserNameUI').innerText = name;
       document.getElementById('adminEditUserPin').value = pin;
-      document.getElementById('adminEditUserAdmin').checked = isAdmin;
+      
+      const adminCheckbox = document.getElementById('adminEditUserAdmin');
+      adminCheckbox.checked = isAdmin;
+      
+      // Prevent stripping the owner's admin rights
+      if (name === 'Daniel Rock') {
+        adminCheckbox.disabled = true;
+        adminCheckbox.checked = true;
+      } else {
+        adminCheckbox.disabled = false;
+      }
+      
       openModal('adminEditUserModal');
     }
 
@@ -553,7 +575,6 @@
       container.innerHTML = '<p class="text-slate-400">Loading history...</p>';
       
       try {
-        // Fix: Removed .orderBy() to bypass Firebase's hidden composite index crash
         const snap = await db.collection('audit_logs')
           .where('itemId', '==', id)
           .get();
@@ -563,7 +584,6 @@
           return;
         }
 
-        // Sort descending locally in the browser
         let logs = snap.docs.map(d => d.data());
         logs.sort((a, b) => {
           const tA = a.timestamp ? a.timestamp.toMillis() : 0;
@@ -571,7 +591,6 @@
           return tB - tA;
         });
 
-        // Show only the most recent 20 edits
         logs = logs.slice(0, 20);
 
         container.innerHTML = logs.map(l => {
