@@ -45,7 +45,8 @@
       <h1 class="text-lg font-bold tracking-tight">Family Pantry</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span id="currentUserDisplay" class="text-xs bg-slate-700 px-2.5 py-1 rounded-full border border-slate-600 font-medium text-emerald-400">Not logged in</span>
+      <!-- TAP NAME TO OPEN PROFILE SETTINGS -->
+      <button onclick="openMyProfile()" id="currentUserDisplay" title="Edit Profile" class="text-xs bg-slate-700 hover:bg-slate-600 px-2.5 py-1 rounded-full border border-slate-600 font-medium text-emerald-400 transition cursor-pointer">Not logged in</button>
       <button onclick="openProfileModal()" class="text-xs bg-blue-600 hover:bg-blue-500 text-white px-2.5 py-1 rounded transition">Switch User</button>
     </div>
   </header>
@@ -207,7 +208,35 @@
     </div>
   </div>
 
-  <!-- MODAL: USER PROFILES & PIN -->
+  <!-- MODAL: MY PROFILE SETTINGS -->
+  <div id="myProfileModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-slate-800 border border-slate-700 rounded-xl p-5 max-w-sm w-full space-y-4">
+      <div class="flex justify-between items-center border-b border-slate-700 pb-2">
+        <h3 class="font-bold text-base">Profile Settings: <span id="myProfileNameUI" class="text-emerald-400"></span></h3>
+        <button onclick="closeModal('myProfileModal')" class="text-slate-400 hover:text-white">&times;</button>
+      </div>
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Verify Current PIN</label>
+          <input id="myProfileOldPin" type="password" maxlength="4" placeholder="Current PIN" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-sm" />
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">New PIN (Optional)</label>
+          <input id="myProfileNewPin" type="password" maxlength="4" placeholder="New 4-Digit PIN" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-sm" />
+        </div>
+        <label class="flex items-center gap-2 cursor-pointer pt-2 border-t border-slate-700">
+          <input type="checkbox" id="myProfileAdmin" class="w-4 h-4 rounded bg-slate-900 border-slate-700" />
+          <span class="text-xs text-slate-300">Administrator (Can delete items)</span>
+        </label>
+      </div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button onclick="closeModal('myProfileModal')" class="px-3 py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-xs">Cancel</button>
+        <button onclick="saveMyProfile()" class="px-4 py-1.5 rounded bg-blue-600 hover:bg-blue-500 font-semibold text-xs">Save Profile</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: USER PROFILES & PIN (LOGIN/CREATE) -->
   <div id="profileModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
     <div class="bg-slate-800 border border-slate-700 rounded-xl p-5 max-w-sm w-full space-y-4">
       <h3 class="font-bold text-base border-b border-slate-700 pb-2">Select or Add Profile</h3>
@@ -349,6 +378,47 @@
       if (currentUser === 'Daniel Rock') return true;
       const profile = profiles.find(p => p.name === currentUser);
       return profile ? !!profile.isAdmin : false;
+    }
+
+    // --- PROFILE SETTINGS (CHANGE PIN & ADMIN TOGGLE) ---
+    function openMyProfile() {
+      if (!currentUser) return;
+      const profile = profiles.find(p => p.name === currentUser);
+      if (!profile) return;
+      
+      document.getElementById('myProfileNameUI').innerText = profile.name;
+      document.getElementById('myProfileOldPin').value = '';
+      document.getElementById('myProfileNewPin').value = '';
+      document.getElementById('myProfileAdmin').checked = profile.isAdmin || currentUser === 'Daniel Rock';
+      
+      openModal('myProfileModal');
+    }
+
+    async function saveMyProfile() {
+      const profile = profiles.find(p => p.name === currentUser);
+      if (!profile) return;
+      
+      const oldPin = document.getElementById('myProfileOldPin').value;
+      const newPin = document.getElementById('myProfileNewPin').value;
+      const isAdmin = document.getElementById('myProfileAdmin').checked;
+      
+      if (oldPin !== profile.pin) {
+        return alert("Current PIN is incorrect. You must verify your current PIN to make changes.");
+      }
+      
+      let updatedPin = profile.pin;
+      if (newPin) {
+        if (newPin.length !== 4) return alert("New PIN must be exactly 4 digits.");
+        updatedPin = newPin;
+      }
+      
+      await db.collection('profiles').doc(profile.id).update({
+        pin: updatedPin,
+        isAdmin: isAdmin
+      });
+      
+      closeModal('myProfileModal');
+      alert("Profile updated successfully!");
     }
 
     // --- 3. FIRESTORE REAL-TIME SYNC ---
