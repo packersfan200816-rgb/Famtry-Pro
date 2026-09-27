@@ -383,15 +383,34 @@
       }).join('');
     }
 
-    // --- 5. ROBUST OPEN FOOD FACTS LOOKUP (WITH UPC-A PADDING & BALLPARK PRICES) ---
-    async function fetchProductFromOFF(barcode) {
-      const candidates = [barcode];
-      // US UPC-A barcodes are 12 digits; Open Food Facts often indexes them under 13-digit EAN (with a leading 0)
-      if (barcode.length === 12) {
-        candidates.push('0' + barcode);
-      } else if (barcode.length === 13 && barcode.startsWith('0')) {
-        candidates.push(barcode.substring(1));
+    // --- 5. DUAL DATABASE LOOKUP (UPCitemdb + Open Food Facts) ---
+    async function fetchProductInfo(barcode) {
+      let cleanCode = barcode.trim();
+      
+      // 1. Try UPCitemdb First (Massive US database for groceries, pet food, and general goods)
+      try {
+        const upcCode = (cleanCode.length === 13 && cleanCode.startsWith('0')) ? cleanCode.substring(1) : cleanCode;
+        const res = await fetch(`https://api.upcitemdb.com/prod/trial/lookup?upc=${upcCode}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.items && data.items.length > 0) {
+            const item = data.items[0];
+            return {
+              barcode: barcode,
+              name: item.title || '',
+              image: (item.images && item.images.length > 0) ? item.images[0] : '',
+              ballparkPrice: item.lowest_recorded_price ? item.lowest_recorded_price.toFixed(2) : ''
+            };
+          }
+        }
+      } catch (e) {
+        console.warn("UPCitemdb lookup failed", e);
       }
+
+      // 2. Fallback to Open Food Facts (Great for European/specialty foods)
+      const candidates = [cleanCode];
+      if (cleanCode.length === 12) candidates.push('0' + cleanCode);
+      else if (cleanCode.length === 13 && cleanCode.startsWith('0')) candidates.push(cleanCode.substring(1));
 
       for (const code of candidates) {
         try {
@@ -406,29 +425,15 @@
               ? `${brand} ${rawName}`
               : (rawName || brand);
 
-            // Fetch ballpark price from Open Food Facts crowd-sourced pricing project
-            let ballpark = '';
-            try {
-              const priceRes = await fetch(`https://prices.openfoodfacts.org/api/v1/prices?product_code=${code}&size=1`);
-              if (priceRes.ok) {
-                const priceData = await priceRes.json();
-                if (priceData && priceData.items && priceData.items.length > 0 && priceData.items[0].price) {
-                  ballpark = parseFloat(priceData.items[0].price).toFixed(2);
-                }
-              }
-            } catch (pe) {
-              console.warn("Price lookup fallback:", pe);
-            }
-
             return {
               barcode: code,
               name: fullName || '',
               image: p.image_front_small_url || p.image_front_thumb_url || p.image_front_url || '',
-              ballparkPrice: ballpark
+              ballparkPrice: ''
             };
           }
         } catch (e) {
-          console.warn("OFF query attempt failed for code:", code, e);
+          console.warn("OFF lookup failed for code", code, e);
         }
       }
       return null;
@@ -443,7 +448,7 @@
       const origText = searchBtn.innerText;
       searchBtn.innerText = 'Searching...';
 
-      // 1. Check if item already exists in local inventory
+      // Check if item already exists in local inventory
       const existing = items.find(i => 
         i.barcode === val || 
         (val.length === 12 && i.barcode === '0' + val) ||
@@ -458,15 +463,15 @@
         return;
       }
 
-      // 2. Query Open Food Facts
-      const offData = await fetchProductFromOFF(val);
+      // Query Databases
+      const productData = await fetchProductInfo(val);
       searchBtn.innerText = origText;
 
       openAddItemModal({
-        barcode: offData ? offData.barcode : val,
-        name: offData && offData.name ? offData.name : '',
-        image: offData ? offData.image : '',
-        ballparkPrice: offData ? offData.ballparkPrice : ''
+        barcode: productData ? productData.barcode : val,
+        name: productData && productData.name ? productData.name : val, // Drops UPC in name box only if BOTH databases fail to find it
+        image: productData ? productData.image : '',
+        ballparkPrice: productData ? productData.ballparkPrice : ''
       });
       inputEl.value = '';
     }
