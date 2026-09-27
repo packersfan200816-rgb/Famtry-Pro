@@ -265,7 +265,7 @@
       <!-- HARDCODED HEIGHT CONTAINER FOR iOS SAFARI SCROLLING -->
       <div id="profileList" class="space-y-2 overflow-y-auto pr-1" style="max-height: 250px; -webkit-overflow-scrolling: touch;"></div>
       
-      <div class="border-t border-slate-700 pt-3 space-y-2 shrink-0">
+      <div class="border-t border-slate-700 pt-3 space-y-2">
         <p class="text-xs text-slate-400 font-semibold">Create New Profile</p>
         <input id="newProfileName" placeholder="Name" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs" />
         <input id="newProfilePin" type="password" maxlength="4" placeholder="4-Digit PIN" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs" />
@@ -365,7 +365,6 @@
         const safeName = p.name.replace(/'/g, "\\'");
         const isOwner = p.name === 'Daniel Rock';
         
-        // Assemble mobile-friendly action buttons
         let actionsHtml = '';
         if (adminMode) {
           actionsHtml += `<button onclick="openAdminEditUser(event, '${p.id}', '${safeName}', '${p.pin}', ${!!p.isAdmin})" class="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-[11px] text-blue-400 hover:text-blue-300 font-semibold shadow-sm transition">Edit</button>`;
@@ -425,7 +424,6 @@
       const adminCheckbox = document.getElementById('adminEditUserAdmin');
       adminCheckbox.checked = isAdmin;
       
-      // Prevent stripping the owner's admin rights
       if (name === 'Daniel Rock') {
         adminCheckbox.disabled = true;
         adminCheckbox.checked = true;
@@ -875,32 +873,7 @@
     }
 
 
-    // --- 7. ASSORTMENT MATH & REORDER LOGIC ---
-    function getAssortmentTotal(grpName) {
-      return items
-        .filter(i => i.assortment && i.assortment.trim().toLowerCase() === grpName.trim().toLowerCase())
-        .reduce((sum, curr) => {
-          let val = curr.mode === 'partial' ? (curr.currentUnits / (curr.fullCapacity || 1)) : (curr.currentCount || 0);
-          return sum + val;
-        }, 0);
-    }
-
-    function isReorderNeeded(item) {
-      if (item.assortment) {
-        const grp = assortments.find(a => a.name.trim().toLowerCase() === item.assortment.trim().toLowerCase());
-        if (grp) {
-          const totalInGrp = getAssortmentTotal(grp.name);
-          return totalInGrp <= grp.threshold;
-        }
-      }
-      if (item.mode === 'partial') {
-        const pctLeft = (item.currentUnits / (item.fullCapacity || 1)) * 100;
-        return pctLeft <= (item.reorderPct || 0);
-      }
-      return (item.currentCount || 0) <= (item.minCount || 0);
-    }
-
-    // --- 8. RENDERING INTERFACE ---
+    // --- 8. INVENTORY RENDERING LOGIC (WITH ASSORTMENT GROUPING) ---
     function renderLists() {
       const filter = document.getElementById('listFilter').value.toLowerCase();
       const inventoryList = document.getElementById('inventoryContainer');
@@ -912,46 +885,66 @@
       let reorderCount = 0;
       let storeTotals = {};
 
-      const filtered = items.filter(i => 
-        i.name.toLowerCase().includes(filter) || 
-        (i.store && i.store.toLowerCase().includes(filter))
-      );
+      let standaloneItems = [];
+      let groupedItems = {}; 
 
-      filtered.forEach(item => {
-        const needsReorder = isReorderNeeded(item);
-        if (needsReorder) {
-          reorderCount++;
-          const storeName = item.store || 'Unassigned Store';
-          const price = item.price ? Number(item.price) : 0;
-          storeTotals[storeName] = (storeTotals[storeName] || 0) + price;
+      // 1. Sort items into individual list OR assortment groups
+      items.forEach(item => {
+        if (item.assortment && item.assortment.trim() !== '') {
+           let aName = item.assortment.trim().toLowerCase();
+           if (!groupedItems[aName]) {
+             const aConfig = assortments.find(a => a.name.trim().toLowerCase() === aName);
+             groupedItems[aName] = { 
+               name: aConfig ? aConfig.name : item.assortment.trim(),
+               threshold: aConfig ? aConfig.threshold : 0,
+               items: [] 
+             };
+           }
+           groupedItems[aName].items.push(item);
+        } else {
+           standaloneItems.push(item);
         }
+      });
 
+      // 2. Helper function to build the HTML card for any item
+      function createCard(item, isGrouped = false, forceReorderBadge = false) {
         const fallbackImg = "https://cdn-icons-png.flaticon.com/512/679/679821.png";
         const thumb = item.image || fallbackImg;
-        
         const lastModDate = (item.lastModifiedAt && item.lastModifiedAt.toDate) 
           ? item.lastModifiedAt.toDate().toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}) 
           : 'recently';
 
-        const card = `
-          <div class="bg-slate-800 border ${needsReorder ? 'border-amber-500/50' : 'border-slate-700'} rounded-lg p-3 flex flex-col gap-2">
-            
+        let needsReorder = forceReorderBadge;
+        if (!isGrouped) {
+          if (item.mode === 'partial') {
+            needsReorder = ((item.currentUnits / (item.fullCapacity || 1)) * 100) <= (item.reorderPct || 0);
+          } else {
+            needsReorder = (item.currentCount || 0) <= (item.minCount || 0);
+          }
+        }
+
+        if (!isGrouped && needsReorder) {
+            const storeName = item.store || 'Unassigned Store';
+            storeTotals[storeName] = (storeTotals[storeName] || 0) + (Number(item.price) || 0);
+        }
+
+        return `
+          <div class="bg-slate-800 border ${needsReorder && !isGrouped ? 'border-amber-500/50' : 'border-slate-700'} rounded-lg p-3 flex flex-col gap-2 ${isGrouped ? 'mt-2' : ''}">
             <div class="flex items-center justify-between gap-3">
               <img src="${thumb}" class="w-12 h-12 rounded object-cover bg-slate-900 border border-slate-700" onerror="this.src='${fallbackImg}'" />
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-1.5">
                   <span class="font-bold text-sm truncate">${item.name}</span>
-                  ${needsReorder ? '<span class="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded font-medium">REORDER</span>' : ''}
+                  ${needsReorder && !isGrouped ? '<span class="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded font-medium">REORDER</span>' : ''}
                 </div>
                 <div class="text-xs text-slate-400 flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
                   <span>Store: <strong class="text-slate-300">${item.store || 'None'}</strong></span>
                   <span>Price: <strong class="text-slate-300">${item.price ? '$' + Number(item.price).toFixed(2) : 'N/A'}</strong></span>
-                  ${item.assortment ? `<span>Assortment: <strong class="text-blue-400">${item.assortment}</strong></span>` : ''}
                 </div>
                 <div class="text-xs mt-1 text-slate-300">
                   ${item.mode === 'partial' 
-                    ? `Remaining: <strong>${item.currentUnits}</strong> / ${item.fullCapacity} (${Math.round((item.currentUnits/item.fullCapacity)*100)}%)` 
-                    : `In Stock: <strong>${item.currentCount}</strong> (Min:${item.minCount})`}
+                    ? `Remaining: <strong>${item.currentUnits}</strong> / ${item.fullCapacity} (${Math.round((item.currentUnits/(item.fullCapacity||1))*100)}%)` 
+                    : `In Stock: <strong>${item.currentCount}</strong>${!isGrouped ? `(Min: ${item.minCount})` : ''}`}
                 </div>
               </div>
               <div class="flex flex-col items-end gap-1.5">
@@ -962,17 +955,74 @@
                 <button onclick="openEditItemModal('${item.id}')" class="text-[11px] text-slate-400 hover:text-amber-400 mt-1">Edit Item</button>
               </div>
             </div>
-            
             <div class="mt-1 pt-2 border-t border-slate-700/50 flex justify-between items-center text-[10px] text-slate-500">
-              <span>${item.lastModifiedBy ? `Last updated by <strong class="text-slate-300">${item.lastModifiedBy}</strong> on${lastModDate}` : 'Added to inventory'}</span>
-              <button onclick="showHistory('${item.id}')" class="text-blue-400 hover:text-blue-300 font-medium">View History</button>
+              <span>${item.lastModifiedBy ? `Updated by <strong class="text-slate-300">${item.lastModifiedBy}</strong> on${lastModDate}` : 'Added to inventory'}</span>
+              <button onclick="showHistory('${item.id}')" class="text-blue-400 hover:text-blue-300 font-medium">History</button>
             </div>
-
           </div>
         `;
+      }
 
-        invHtml += card;
-        if (needsReorder) reorderHtml += card;
+      // 3. Render Assortment Groups (Unified Parent Cards)
+      Object.values(groupedItems).forEach(group => {
+        let total = group.items.reduce((sum, curr) => sum + (curr.mode === 'partial' ? (curr.currentUnits/(curr.fullCapacity||1)) : (curr.currentCount||0)), 0);
+        total = Math.round(total * 100) / 100;
+        let needsReorder = total <= group.threshold;
+
+        let matchesFilter = group.name.toLowerCase().includes(filter) || group.items.some(i => i.name.toLowerCase().includes(filter) || (i.store && i.store.toLowerCase().includes(filter)));
+
+        if (matchesFilter) {
+          let groupHeader = `
+            <div class="bg-slate-800 border ${needsReorder ? 'border-amber-500/50' : 'border-blue-500/30'} rounded-lg p-3 flex flex-col gap-2 mb-2">
+              <div class="flex justify-between items-center pb-2">
+                <div>
+                  <span class="font-bold text-sm text-blue-400">📦 Assortment: ${group.name}</span>
+                  <div class="text-xs text-slate-400">Total in Pool: <strong class="${needsReorder ? 'text-amber-400' : 'text-emerald-400'}">${total}</strong> (Alert at: ${group.threshold})</div>
+                </div>
+                ${needsReorder ? '<span class="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded font-medium">REORDER</span>' : ''}
+              </div>
+              <div class="space-y-2 border-l-2 border-slate-700/50 pl-2 ml-1">
+          `;
+          
+          let groupContent = group.items.map(i => createCard(i, true)).join('');
+          let groupFooter = `</div></div>`;
+          
+          let fullGroupHtml = groupHeader + groupContent + groupFooter;
+          invHtml += fullGroupHtml;
+          
+          if (needsReorder) {
+            reorderCount++;
+            reorderHtml += fullGroupHtml;
+
+            // Pick the cheapest item in the assortment to estimate shopping price
+            if (group.items.length > 0) {
+              let cheapestItem = group.items.reduce((prev, curr) => (Number(prev.price||0) < Number(curr.price||0)) ? prev : curr);
+              if (cheapestItem) {
+                 const storeName = cheapestItem.store || 'Unassigned Store';
+                 storeTotals[storeName] = (storeTotals[storeName] || 0) + (Number(cheapestItem.price) || 0);
+              }
+            }
+          }
+        }
+      });
+
+      // 4. Render Standalone Items
+      standaloneItems.forEach(item => {
+        if (item.name.toLowerCase().includes(filter) || (item.store && item.store.toLowerCase().includes(filter))) {
+          let needsReorder = false;
+          if (item.mode === 'partial') {
+            needsReorder = ((item.currentUnits / (item.fullCapacity || 1)) * 100) <= (item.reorderPct || 0);
+          } else {
+            needsReorder = (item.currentCount || 0) <= (item.minCount || 0);
+          }
+
+          let card = createCard(item, false);
+          invHtml += card;
+          if (needsReorder) {
+            reorderCount++;
+            reorderHtml += card;
+          }
+        }
       });
 
       inventoryList.innerHTML = invHtml || '<p class="text-slate-500 text-center py-6">Pantry is empty. Add or scan items above.</p>';
@@ -989,16 +1039,30 @@
     function renderAssortments() {
       const container = document.getElementById('assortmentContainer');
       container.innerHTML = assortments.map(a => {
-        let total = getAssortmentTotal(a.name);
-        total = Math.round(total * 100) / 100; // Keep up to 2 decimal places for partials
+        const matches = items.filter(i => i.assortment && i.assortment.trim().toLowerCase() === a.name.trim().toLowerCase());
+        let total = matches.reduce((sum, curr) => sum + (curr.mode === 'partial' ? (curr.currentUnits / (curr.fullCapacity || 1)) : (curr.currentCount || 0)), 0);
+        total = Math.round(total * 100) / 100; 
         const low = total <= a.threshold;
+        
+        const itemListHtml = matches.map(m => `
+          <div class="flex justify-between items-center text-xs py-1 border-b border-slate-700/30 last:border-0">
+            <span class="text-slate-300 truncate pr-2">${m.name}</span>
+            <span class="text-slate-400 font-mono shrink-0">${m.mode === 'partial' ? m.currentUnits : m.currentCount} qty</span>
+          </div>
+        `).join('');
+
         return `
-          <div class="bg-slate-800 p-3 rounded-lg border ${low ? 'border-rose-500/50' : 'border-slate-700'} flex justify-between items-center">
-            <div>
-              <p class="font-bold text-sm">${a.name}</p>
-              <p class="text-xs text-slate-400">Pool count: <strong class="${low ? 'text-rose-400' : 'text-emerald-400'}">${total}</strong> (Alert threshold: ${a.threshold})</p>
+          <div class="bg-slate-800 rounded-lg border ${low ? 'border-rose-500/50' : 'border-slate-700'} overflow-hidden mb-2">
+            <div class="p-3 flex justify-between items-center cursor-pointer hover:bg-slate-700/50 transition" onclick="document.getElementById('assort_items_${a.id}').classList.toggle('hidden')">
+              <div>
+                <p class="font-bold text-sm">${a.name} <span class="text-xs text-slate-500 ml-1">▼</span></p>
+                <p class="text-xs text-slate-400">Pool count: <strong class="${low ? 'text-rose-400' : 'text-emerald-400'}">${total}</strong> (Alert threshold: ${a.threshold})</p>
+              </div>
+              <button onclick="deleteAssortment(event, '${a.id}')" class="text-slate-500 hover:text-rose-400 text-xs px-2 py-1">&times; Remove</button>
             </div>
-            <button onclick="deleteAssortment('${a.id}')" class="text-slate-500 hover:text-rose-400 text-xs">&times; Remove</button>
+            <div id="assort_items_${a.id}" class="hidden bg-slate-900/50 px-3 py-2 border-t border-slate-700">
+              ${itemListHtml || '<p class="text-xs text-slate-500 italic">No items assigned to this assortment yet.</p>'}
+            </div>
           </div>
         `;
       }).join('');
@@ -1020,7 +1084,7 @@
     function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
     
     function openProfileModal() { 
-      renderProfiles(); // Re-render to ensure admin edit/delete buttons show correctly
+      renderProfiles(); 
       openModal('profileModal'); 
     }
 
@@ -1054,7 +1118,6 @@
       document.getElementById('itemReorderPct').value = 30;
       toggleModeFields();
       
-      // Hide delete button when adding a new item
       document.getElementById('deleteItemBtn').classList.add('hidden');
       
       openModal('itemModal');
@@ -1081,7 +1144,6 @@
       document.getElementById('itemReorderPct').value = i.reorderPct || 30;
       toggleModeFields();
       
-      // Show Delete button ONLY if the user is an Administrator
       if (isUserAdmin()) {
         document.getElementById('deleteItemBtn').classList.remove('hidden');
       } else {
@@ -1133,7 +1195,8 @@
       closeModal('assortmentModal');
     }
 
-    async function deleteAssortment(id) {
+    async function deleteAssortment(event, id) {
+      event.stopPropagation();
       if (confirm('Delete this assortment?')) {
         await db.collection('assortments').doc(id).delete();
       }
