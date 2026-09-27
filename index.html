@@ -214,7 +214,7 @@
   </div>
 
   <script>
-    // --- 1. FIREBASE SETUP (PRE-CONFIGURED FOR YOUR PROJECT) ---
+    // --- 1. FIREBASE SETUP ---
     const firebaseConfig = {
       apiKey: "AIzaSyDifh3hjDZ5_ElC2jSBGwnaTkZChsuri-I",
       authDomain: "grocery-inventory-pro.firebaseapp.com",
@@ -224,12 +224,10 @@
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
 
-    // Register Service Worker for PWA
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(console.error);
     }
 
-    // State Variables
     let currentUser = localStorage.getItem('pantry_user') || null;
     let items = [];
     let assortments = [];
@@ -402,30 +400,71 @@
       document.getElementById('barcodeInput').value = '';
     }
 
-    // --- 6. CAMERA SCANNER LOGIC ---
-    function toggleCameraScanner() {
+    // --- 6. CAMERA SCANNER LOGIC (CONFIGURED FOR GROCERY BARCODES) ---
+    async function toggleCameraScanner() {
       const container = document.getElementById('reader-container');
-      if (container.classList.contains('hidden')) {
-        container.classList.remove('hidden');
-        html5QrCode = new Html5Qrcode("reader");
-        html5QrCode.start(
-          { facingMode: "environment" },
-          { fps: 10, qrbox: { width: 250, height: 150 } },
-          (decodedText) => {
-            html5QrCode.stop();
-            container.classList.add('hidden');
-            document.getElementById('barcodeInput').value = decodedText;
-            handleManualLookup();
-          },
-          (errorMessage) => {}
-        ).catch(err => {
-          alert("Camera access denied or unavailable.");
-          container.classList.add('hidden');
-        });
-      } else {
-        if (html5QrCode) html5QrCode.stop();
+      
+      if (!container.classList.contains('hidden')) {
+        if (html5QrCode) {
+          try {
+            await html5QrCode.stop();
+            html5QrCode.clear();
+          } catch (e) {}
+        }
         container.classList.add('hidden');
+        return;
       }
+
+      container.classList.remove('hidden');
+
+      if (!html5QrCode) {
+        html5QrCode = new Html5Qrcode("reader");
+      }
+
+      const config = {
+        fps: 15,
+        qrbox: { width: 280, height: 160 },
+        aspectRatio: 1.777778,
+        formatsToSupport: [
+          Html5QrcodeSupportedFormats.UPC_A,
+          Html5QrcodeSupportedFormats.UPC_E,
+          Html5QrcodeSupportedFormats.EAN_13,
+          Html5QrcodeSupportedFormats.EAN_8,
+          Html5QrcodeSupportedFormats.CODE_128,
+          Html5QrcodeSupportedFormats.QR_CODE
+        ]
+      };
+
+      try {
+        await html5QrCode.start(
+          { facingMode: { ideal: "environment" } },
+          config,
+          onScanSuccess,
+          (err) => {}
+        );
+      } catch (err) {
+        try {
+          await html5QrCode.start(
+            { facingMode: "user" },
+            config,
+            onScanSuccess,
+            (err) => {}
+          );
+        } catch (finalErr) {
+          alert("Camera could not start. Ensure permissions are granted.");
+          container.classList.add('hidden');
+        }
+      }
+    }
+
+    async function onScanSuccess(decodedText) {
+      if (html5QrCode) {
+        await html5QrCode.stop();
+        html5QrCode.clear();
+      }
+      document.getElementById('reader-container').classList.add('hidden');
+      document.getElementById('barcodeInput').value = decodedText;
+      handleManualLookup();
     }
 
     // --- 7. REORDER LOGIC & CALCULATION ---
