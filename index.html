@@ -7,10 +7,30 @@
   <link rel="manifest" href="manifest.json" />
   <meta name="theme-color" content="#1e293b" />
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/html5-qrcode"></script>
+  <!-- Barcode Engine: QuaggaJS for robust 1D Grocery UPC/EAN scanning -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
   <!-- Firebase SDKs -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <style>
+    #interactive.viewport {
+      position: relative;
+      width: 100%;
+      height: auto;
+      overflow: hidden;
+      border-radius: 0.5rem;
+    }
+    #interactive.viewport > canvas, #interactive.viewport > video {
+      max-width: 100%;
+      width: 100%;
+      height: auto;
+    }
+    canvas.drawing, canvas.drawingBuffer {
+      position: absolute;
+      left: 0;
+      top: 0;
+    }
+  </style>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen pb-20 font-sans">
 
@@ -48,8 +68,9 @@
       </div>
 
       <!-- CAMERA SCANNER CONTAINER -->
-      <div id="reader-container" class="hidden flex-col items-center p-3 bg-slate-900 rounded-lg border border-slate-700">
-        <div id="reader" class="w-full max-w-sm rounded overflow-hidden"></div>
+      <div id="reader-container" class="hidden flex flex-col items-center p-3 bg-slate-900 rounded-lg border border-slate-700">
+        <div id="interactive" class="viewport w-full max-w-sm"></div>
+        <p class="text-xs text-slate-400 mt-2">Align the barcode horizontally inside the box</p>
         <button onclick="toggleCameraScanner()" class="mt-2 text-xs text-rose-400 hover:underline">Close Camera</button>
       </div>
     </div>
@@ -233,7 +254,7 @@
     let assortments = [];
     let profiles = [];
     let selectedProfileToVerify = null;
-    let html5QrCode = null;
+    let isScannerRunning = false;
 
     // --- 2. AUTH & PROFILES ---
     function updateCurrentUserUI() {
@@ -400,86 +421,70 @@
       document.getElementById('barcodeInput').value = '';
     }
 
-    // --- 6. OPTIMIZED CAMERA SCANNER (HARDWARE ACCELERATED) ---
-    async function toggleCameraScanner() {
+    // --- 6. QUAGGA SCANNER ENGINE (UPC/EAN SPECIALIZED) ---
+    function toggleCameraScanner() {
       const container = document.getElementById('reader-container');
       
-      if (!container.classList.contains('hidden')) {
-        if (html5QrCode) {
-          try {
-            await html5QrCode.stop();
-            html5QrCode.clear();
-          } catch (e) {}
-        }
+      if (isScannerRunning) {
+        Quagga.stop();
+        isScannerRunning = false;
         container.classList.add('hidden');
         return;
       }
 
       container.classList.remove('hidden');
 
-      if (!html5QrCode) {
-        html5QrCode = new Html5Qrcode("reader", {
-          experimentalFeatures: {
-            useBarCodeDetectorIfSupported: true
+      Quagga.init({
+        inputStream: {
+          name: "Live",
+          type: "LiveStream",
+          target: document.querySelector('#interactive'),
+          constraints: {
+            facingMode: "environment",
+            width: { min: 640, ideal: 1280, max: 1920 },
+            height: { min: 480, ideal: 720, max: 1080 }
           }
-        });
-      }
-
-      const qrboxFunction = function(viewfinderWidth, viewfinderHeight) {
-        let minEdgePercentage = 0.8;
-        let qrboxWidth = Math.floor(viewfinderWidth * minEdgePercentage);
-        let qrboxHeight = Math.floor(viewfinderHeight * 0.45);
-        return {
-          width: qrboxWidth,
-          height: qrboxHeight
-        };
-      };
-
-      const config = {
-        fps: 20,
-        qrbox: qrboxFunction,
-        formatsToSupport: [
-          Html5QrcodeSupportedFormats.UPC_A,
-          Html5QrcodeSupportedFormats.UPC_E,
-          Html5QrcodeSupportedFormats.EAN_13,
-          Html5QrcodeSupportedFormats.EAN_8,
-          Html5QrcodeSupportedFormats.CODE_128,
-          Html5QrcodeSupportedFormats.CODE_39
-        ]
-      };
-
-      try {
-        await html5QrCode.start(
-          { facingMode: "environment" },
-          config,
-          onScanSuccess,
-          () => {}
-        );
-      } catch (err) {
-        try {
-          await html5QrCode.start(
-            { facingMode: "user" },
-            config,
-            onScanSuccess,
-            () => {}
-          );
-        } catch (finalErr) {
-          alert("Camera could not start. Ensure permissions are granted.");
+        },
+        locator: {
+          patchSize: "medium",
+          halfSample: true
+        },
+        numOfWorkers: 2,
+        frequency: 10,
+        decoder: {
+          readers: [
+            "upc_reader",
+            "upc_e_reader",
+            "ean_reader",
+            "ean_8_reader",
+            "code_128_reader"
+          ]
+        },
+        locate: true
+      }, function(err) {
+        if (err) {
+          console.error("Quagga Init Error:", err);
+          alert("Could not start camera. Check permissions and ensure https:// is used.");
           container.classList.add('hidden');
+          isScannerRunning = false;
+          return;
         }
-      }
-    }
+        Quagga.start();
+        isScannerRunning = true;
+      });
 
-    async function onScanSuccess(decodedText) {
-      if (html5QrCode) {
-        try {
-          await html5QrCode.stop();
-          html5QrCode.clear();
-        } catch (e) {}
-      }
-      document.getElementById('reader-container').classList.add('hidden');
-      document.getElementById('barcodeInput').value = decodedText;
-      handleManualLookup();
+      Quagga.onDetected(function(result) {
+        if (result && result.codeResult && result.codeResult.code) {
+          const barcode = result.codeResult.code;
+          Quagga.stop();
+          isScannerRunning = false;
+          container.classList.add('hidden');
+          
+          if (navigator.vibrate) navigator.vibrate(100);
+          document.getElementById('barcodeInput').value = barcode;
+          handleManualLookup();
+        }
+      });
     }
 
     // --- 7. REORDER LOGIC & CALCULATION ---
