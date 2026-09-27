@@ -61,7 +61,7 @@
         <input id="barcodeInput" type="text" placeholder="Scan barcode or type item/SKU..." 
                class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
                onkeydown="if(event.key==='Enter') handleManualLookup()" />
-        <button onclick="handleManualLookup()" class="bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded-lg text-sm font-medium">Search</button>
+        <button id="searchBtn" onclick="handleManualLookup()" class="bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded-lg text-sm font-medium">Search</button>
         <button onclick="toggleCameraScanner()" class="bg-emerald-600 hover:bg-emerald-500 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-1">
           📷 <span class="hidden sm:inline">Camera</span>
         </button>
@@ -383,45 +383,95 @@
       }).join('');
     }
 
-    // --- 5. OPEN FOOD FACTS LOOKUP ---
+    // --- 5. ROBUST OPEN FOOD FACTS LOOKUP (WITH UPC-A PADDING & BALLPARK PRICES) ---
     async function fetchProductFromOFF(barcode) {
-      try {
-        const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${barcode}.json`);
-        const data = await res.json();
-        if (data.status === 1) {
-          const p = data.product;
-          return {
-            name: p.product_name || p.generic_name || '',
-            image: p.image_front_thumb_url || p.image_front_url || ''
-          };
+      const candidates = [barcode];
+      // US UPC-A barcodes are 12 digits; Open Food Facts often indexes them under 13-digit EAN (with a leading 0)
+      if (barcode.length === 12) {
+        candidates.push('0' + barcode);
+      } else if (barcode.length === 13 && barcode.startsWith('0')) {
+        candidates.push(barcode.substring(1));
+      }
+
+      for (const code of candidates) {
+        try {
+          const res = await fetch(`https://world.openfoodfacts.org/api/v0/product/${code}.json`);
+          if (!res.ok) continue;
+          const data = await res.json();
+          if (data && data.status === 1 && data.product) {
+            const p = data.product;
+            const brand = p.brands ? p.brands.split(',')[0].trim() : '';
+            const rawName = p.product_name || p.product_name_en || p.generic_name || '';
+            const fullName = brand && rawName && !rawName.toLowerCase().includes(brand.toLowerCase())
+              ? `${brand} ${rawName}`
+              : (rawName || brand);
+
+            // Fetch ballpark price from Open Food Facts crowd-sourced pricing project
+            let ballpark = '';
+            try {
+              const priceRes = await fetch(`https://prices.openfoodfacts.org/api/v1/prices?product_code=${code}&size=1`);
+              if (priceRes.ok) {
+                const priceData = await priceRes.json();
+                if (priceData && priceData.items && priceData.items.length > 0 && priceData.items[0].price) {
+                  ballpark = parseFloat(priceData.items[0].price).toFixed(2);
+                }
+              }
+            } catch (pe) {
+              console.warn("Price lookup fallback:", pe);
+            }
+
+            return {
+              barcode: code,
+              name: fullName || '',
+              image: p.image_front_small_url || p.image_front_thumb_url || p.image_front_url || '',
+              ballparkPrice: ballpark
+            };
+          }
+        } catch (e) {
+          console.warn("OFF query attempt failed for code:", code, e);
         }
-      } catch (e) {
-        console.error("OFF Fetch error", e);
       }
       return null;
     }
 
     async function handleManualLookup() {
-      const val = document.getElementById('barcodeInput').value.trim();
+      const inputEl = document.getElementById('barcodeInput');
+      const val = inputEl.value.trim();
       if (!val) return;
 
-      const existing = items.find(i => i.barcode === val || i.name.toLowerCase() === val.toLowerCase());
+      const searchBtn = document.getElementById('searchBtn');
+      const origText = searchBtn.innerText;
+      searchBtn.innerText = 'Searching...';
+
+      // 1. Check if item already exists in local inventory
+      const existing = items.find(i => 
+        i.barcode === val || 
+        (val.length === 12 && i.barcode === '0' + val) ||
+        (i.barcode && i.barcode.length === 12 && '0' + i.barcode === val) ||
+        i.name.toLowerCase() === val.toLowerCase()
+      );
+
       if (existing) {
         adjustCount(existing.id, 1);
-        document.getElementById('barcodeInput').value = '';
+        inputEl.value = '';
+        searchBtn.innerText = origText;
         return;
       }
 
+      // 2. Query Open Food Facts
       const offData = await fetchProductFromOFF(val);
+      searchBtn.innerText = origText;
+
       openAddItemModal({
-        barcode: val,
-        name: offData ? offData.name : val,
-        image: offData ? offData.image : ''
+        barcode: offData ? offData.barcode : val,
+        name: offData && offData.name ? offData.name : '',
+        image: offData ? offData.image : '',
+        ballparkPrice: offData ? offData.ballparkPrice : ''
       });
-      document.getElementById('barcodeInput').value = '';
+      inputEl.value = '';
     }
 
-    // --- 6. QUAGGA SCANNER ENGINE (UPC/EAN SPECIALIZED) ---
+    // --- 6. QUAGGA SCANNER ENGINE ---
     function toggleCameraScanner() {
       const container = document.getElementById('reader-container');
       
@@ -636,7 +686,7 @@
       document.getElementById('itemStore').value = '';
       document.getElementById('itemAssortment').value = '';
       document.getElementById('itemPrice').value = '';
-      document.getElementById('itemBallparkPrice').value = '';
+      document.getElementById('itemBallparkPrice').value = prefill.ballparkPrice || '';
       document.getElementById('itemMode').value = 'count';
       document.getElementById('itemCurrentCount').value = 1;
       document.getElementById('itemMinCount').value = 1;
@@ -679,6 +729,7 @@
         store: document.getElementById('itemStore').value.trim(),
         assortment: document.getElementById('itemAssortment').value.trim(),
         price: parseFloat(document.getElementById('itemPrice').value) || 0,
+        ballparkPrice: parseFloat(document.getElementById('itemBallparkPrice').value) || 0,
         mode: document.getElementById('itemMode').value,
         currentCount: parseInt(document.getElementById('itemCurrentCount').value) || 0,
         minCount: parseInt(document.getElementById('itemMinCount').value) || 0,
