@@ -238,12 +238,13 @@
 
   <!-- MODAL: USER PROFILES & PIN (LOGIN/CREATE/DELETE) -->
   <div id="profileModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-    <div class="bg-slate-800 border border-slate-700 rounded-xl p-5 max-w-sm w-full flex flex-col max-h-[85vh]">
-      <h3 class="font-bold text-base border-b border-slate-700 pb-3 mb-3 shrink-0">Select or Add Profile</h3>
-      <!-- Scrollable User List -->
-      <div id="profileList" class="space-y-2 overflow-y-auto flex-1 min-h-[100px] mb-3 pr-1"></div>
+    <div class="bg-slate-800 border border-slate-700 rounded-xl p-5 max-w-sm w-full space-y-4">
+      <h3 class="font-bold text-base border-b border-slate-700 pb-2">Select or Add Profile</h3>
       
-      <div class="border-t border-slate-700 pt-3 space-y-2 shrink-0">
+      <!-- HARDCODED HEIGHT CONTAINER FOR iOS SAFARI SCROLLING -->
+      <div id="profileList" class="space-y-2 overflow-y-auto pr-1" style="max-height: 220px; -webkit-overflow-scrolling: touch;"></div>
+      
+      <div class="border-t border-slate-700 pt-3 space-y-2">
         <p class="text-xs text-slate-400 font-semibold">Create New Profile</p>
         <input id="newProfileName" placeholder="Name" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs" />
         <input id="newProfilePin" type="password" maxlength="4" placeholder="4-Digit PIN" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs" />
@@ -340,7 +341,7 @@
       const adminMode = isUserAdmin();
       
       list.innerHTML = profiles.map(p => `
-        <div class="flex justify-between items-center p-2.5 bg-slate-900 rounded border border-slate-700 hover:border-blue-500 cursor-pointer flex-shrink-0" onclick="requestPin('${p.name.replace(/'/g, "\\'")}')">
+        <div class="flex justify-between items-center p-2.5 bg-slate-900 rounded border border-slate-700 hover:border-blue-500 cursor-pointer" style="flex-shrink: 0;" onclick="requestPin('${p.name.replace(/'/g, "\\'")}')">
           <div class="flex items-center gap-2">
             <span class="text-sm font-semibold">${p.name}</span>
             ${p.isAdmin ? '<span class="text-[10px] bg-blue-500/20 text-blue-300 px-1.5 py-0.5 rounded font-medium">Admin</span>' : ''}
