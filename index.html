@@ -366,11 +366,19 @@
 
       if (item.mode === 'partial') {
         let newUnits = Math.max(0, +(item.currentUnits + delta).toFixed(1));
-        await db.collection('items').doc(id).update({ currentUnits: newUnits });
+        await db.collection('items').doc(id).update({ 
+          currentUnits: newUnits,
+          lastModifiedBy: currentUser,
+          lastModifiedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
         logAction(id, item.name, `Adjusted remaining units to ${newUnits}`);
       } else {
         let newCount = Math.max(0, (item.currentCount || 0) + delta);
-        await db.collection('items').doc(id).update({ currentCount: newCount });
+        await db.collection('items').doc(id).update({ 
+          currentCount: newCount,
+          lastModifiedBy: currentUser,
+          lastModifiedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
         logAction(id, item.name, `${delta > 0 ? 'Scanned IN' : 'Scanned OUT'} (Total: ${newCount})`);
       }
     }
@@ -715,36 +723,47 @@
 
         const fallbackImg = "https://cdn-icons-png.flaticon.com/512/679/679821.png";
         const thumb = item.image || fallbackImg;
+        
+        const lastModDate = (item.lastModifiedAt && item.lastModifiedAt.toDate) 
+          ? item.lastModifiedAt.toDate().toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}) 
+          : 'recently';
 
         const card = `
-          <div class="bg-slate-800 border ${needsReorder ? 'border-amber-500/50' : 'border-slate-700'} rounded-lg p-3 flex items-center justify-between gap-3">
-            <img src="${thumb}" class="w-12 h-12 rounded object-cover bg-slate-900 border border-slate-700" onerror="this.src='${fallbackImg}'" />
-            <div class="flex-1 min-w-0">
-              <div class="flex items-center gap-1.5">
-                <span class="font-bold text-sm truncate">${item.name}</span>
-                ${needsReorder ? '<span class="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded font-medium">REORDER</span>' : ''}
+          <div class="bg-slate-800 border ${needsReorder ? 'border-amber-500/50' : 'border-slate-700'} rounded-lg p-3 flex flex-col gap-2">
+            
+            <div class="flex items-center justify-between gap-3">
+              <img src="${thumb}" class="w-12 h-12 rounded object-cover bg-slate-900 border border-slate-700" onerror="this.src='${fallbackImg}'" />
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-1.5">
+                  <span class="font-bold text-sm truncate">${item.name}</span>
+                  ${needsReorder ? '<span class="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded font-medium">REORDER</span>' : ''}
+                </div>
+                <div class="text-xs text-slate-400 flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
+                  <span>Store: <strong class="text-slate-300">${item.store || 'None'}</strong></span>
+                  <span>Price: <strong class="text-slate-300">${item.price ? '$' + Number(item.price).toFixed(2) : 'N/A'}</strong></span>
+                  ${item.assortment ? `<span>Assortment: <strong class="text-blue-400">${item.assortment}</strong></span>` : ''}
+                </div>
+                <div class="text-xs mt-1 text-slate-300">
+                  ${item.mode === 'partial' 
+                    ? `Remaining: <strong>${item.currentUnits}</strong> / ${item.fullCapacity} (${Math.round((item.currentUnits/item.fullCapacity)*100)}%)` 
+                    : `In Stock: <strong>${item.currentCount}</strong> (Min:${item.minCount})`}
+                </div>
               </div>
-              <div class="text-xs text-slate-400 flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
-                <span>Store: <strong class="text-slate-300">${item.store || 'None'}</strong></span>
-                <span>Price: <strong class="text-slate-300">${item.price ? '$' + Number(item.price).toFixed(2) : 'N/A'}</strong></span>
-                ${item.assortment ? `<span>Assortment: <strong class="text-blue-400">${item.assortment}</strong></span>` : ''}
-              </div>
-              <div class="text-xs mt-1 text-slate-300">
-                ${item.mode === 'partial' 
-                  ? `Remaining: <strong>${item.currentUnits}</strong> / ${item.fullCapacity} (${Math.round((item.currentUnits/item.fullCapacity)*100)}%)` 
-                  : `In Stock: <strong>${item.currentCount}</strong> (Min:${item.minCount})`}
+              <div class="flex flex-col items-end gap-1.5">
+                <div class="flex items-center gap-1">
+                  <button onclick="adjustCount('${item.id}', -1)" class="w-7 h-7 bg-slate-700 hover:bg-slate-600 rounded flex items-center justify-center font-bold text-sm">-</button>
+                  <button onclick="adjustCount('${item.id}', 1)" class="w-7 h-7 bg-slate-700 hover:bg-slate-600 rounded flex items-center justify-center font-bold text-sm">+</button>
+                </div>
+                <button onclick="openEditItemModal('${item.id}')" class="text-[11px] text-slate-400 hover:text-amber-400 mt-1">Edit Item</button>
               </div>
             </div>
-            <div class="flex flex-col items-end gap-1.5">
-              <div class="flex items-center gap-1">
-                <button onclick="adjustCount('${item.id}', -1)" class="w-7 h-7 bg-slate-700 hover:bg-slate-600 rounded flex items-center justify-center font-bold text-sm">-</button>
-                <button onclick="adjustCount('${item.id}', 1)" class="w-7 h-7 bg-slate-700 hover:bg-slate-600 rounded flex items-center justify-center font-bold text-sm">+</button>
-              </div>
-              <div class="flex gap-2 text-[11px] text-slate-400">
-                <button onclick="showHistory('${item.id}')" class="hover:text-blue-400">Log</button>
-                <button onclick="openEditItemModal('${item.id}')" class="hover:text-amber-400">Edit</button>
-              </div>
+            
+            <!-- NEW AUDIT FOOTER -->
+            <div class="mt-1 pt-2 border-t border-slate-700/50 flex justify-between items-center text-[10px] text-slate-500">
+              <span>${item.lastModifiedBy ? `Last updated by <strong class="text-slate-300">${item.lastModifiedBy}</strong> on${lastModDate}` : 'Added to inventory'}</span>
+              <button onclick="showHistory('${item.id}')" class="text-blue-400 hover:text-blue-300 font-medium">View History</button>
             </div>
+
           </div>
         `;
 
@@ -868,13 +887,15 @@
         fullCapacity: parseFloat(document.getElementById('itemFullCapacity').value) || 1,
         currentUnits: parseFloat(document.getElementById('itemCurrentUnits').value) || 0,
         reorderPct: parseInt(document.getElementById('itemReorderPct').value) || 0,
+        lastModifiedBy: currentUser,
+        lastModifiedAt: firebase.firestore.FieldValue.serverTimestamp()
       };
 
       if (!docData.name) return alert('Item name required');
 
       if (id) {
         await db.collection('items').doc(id).update(docData);
-        logAction(id, docData.name, 'Updated item metadata');
+        logAction(id, docData.name, 'Edited item details');
       } else {
         const ref = await db.collection('items').add(docData);
         logAction(ref.id, docData.name, 'Added item to stock');
