@@ -197,9 +197,12 @@
           </div>
         </div>
       </div>
-      <div class="flex justify-end gap-2 pt-3 border-t border-slate-700">
-        <button onclick="closeModal('itemModal')" class="px-3 py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-xs">Cancel</button>
-        <button onclick="saveItem()" class="px-4 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 font-semibold text-xs">Save</button>
+      <div class="flex justify-between items-center pt-3 border-t border-slate-700">
+        <button id="deleteItemBtn" onclick="deleteItem()" class="hidden px-3 py-1.5 rounded bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition">Delete Item</button>
+        <div class="flex gap-2 ml-auto">
+          <button onclick="closeModal('itemModal')" class="px-3 py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-xs">Cancel</button>
+          <button onclick="saveItem()" class="px-4 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 font-semibold text-xs">Save</button>
+        </div>
       </div>
     </div>
   </div>
@@ -213,6 +216,10 @@
         <p class="text-xs text-slate-400 font-semibold">Create New Profile</p>
         <input id="newProfileName" placeholder="Name" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs" />
         <input id="newProfilePin" type="password" maxlength="4" placeholder="4-Digit PIN" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs" />
+        <label class="flex items-center gap-2 cursor-pointer pb-1 pt-1">
+          <input type="checkbox" id="newProfileAdmin" class="w-4 h-4 rounded bg-slate-900 border-slate-700" />
+          <span class="text-xs text-slate-400">Make Administrator</span>
+        </label>
         <button onclick="createProfile()" class="w-full bg-blue-600 hover:bg-blue-500 py-1.5 rounded text-xs font-semibold">Create Profile</button>
       </div>
     </div>
@@ -276,7 +283,7 @@
     let selectedProfileToVerify = null;
     let isScannerRunning = false;
 
-    // --- 2. AUTH & PROFILES ---
+    // --- 2. AUTH, PROFILES & ADMIN ---
     function updateCurrentUserUI() {
       const el = document.getElementById('currentUserDisplay');
       el.innerText = currentUser ? currentUser : 'Select User';
@@ -302,10 +309,12 @@
     function createProfile() {
       const name = document.getElementById('newProfileName').value.trim();
       const pin = document.getElementById('newProfilePin').value.trim();
+      const isAdmin = document.getElementById('newProfileAdmin').checked;
       if (!name || pin.length !== 4) return alert('Enter a valid name and 4-digit PIN');
-      db.collection('profiles').add({ name, pin });
+      db.collection('profiles').add({ name, pin, isAdmin });
       document.getElementById('newProfileName').value = '';
       document.getElementById('newProfilePin').value = '';
+      document.getElementById('newProfileAdmin').checked = false;
     }
 
     function requestPin(userName) {
@@ -334,6 +343,12 @@
         return false;
       }
       return true;
+    }
+
+    function isUserAdmin() {
+      if (currentUser === 'Daniel Rock') return true;
+      const profile = profiles.find(p => p.name === currentUser);
+      return profile ? !!profile.isAdmin : false;
     }
 
     // --- 3. FIRESTORE REAL-TIME SYNC ---
@@ -409,6 +424,15 @@
           </div>
         `;
       }).join('');
+    }
+
+    async function deleteItem() {
+      const id = document.getElementById('itemId').value;
+      if (!id) return;
+      if (confirm("Permanently delete this item? This action cannot be undone and it will be removed for everyone.")) {
+        await db.collection('items').doc(id).delete();
+        closeModal('itemModal');
+      }
     }
 
     // --- 5. COMPREHENSIVE PRODUCT LOOKUP ENGINE ---
@@ -574,7 +598,6 @@
 
     // --- CUSTOM SEARCHABLE DROPDOWNS (ASSORTMENT & STORE) ---
 
-    // 1. Assortments
     function renderAssortmentDropdownOptions(filterText = '') {
       const dropdown = document.getElementById('assortmentDropdown');
       if (!dropdown) return;
@@ -616,7 +639,6 @@
       document.getElementById('assortmentDropdown').classList.add('hidden');
     }
 
-    // 2. Stores
     function getUniqueStores() {
       const stores = new Set();
       items.forEach(i => {
@@ -758,7 +780,6 @@
               </div>
             </div>
             
-            <!-- NEW AUDIT FOOTER -->
             <div class="mt-1 pt-2 border-t border-slate-700/50 flex justify-between items-center text-[10px] text-slate-500">
               <span>${item.lastModifiedBy ? `Last updated by <strong class="text-slate-300">${item.lastModifiedBy}</strong> on${lastModDate}` : 'Added to inventory'}</span>
               <button onclick="showHistory('${item.id}')" class="text-blue-400 hover:text-blue-300 font-medium">View History</button>
@@ -845,6 +866,10 @@
       document.getElementById('itemCurrentUnits').value = 10;
       document.getElementById('itemReorderPct').value = 30;
       toggleModeFields();
+      
+      // Hide delete button when adding a new item
+      document.getElementById('deleteItemBtn').classList.add('hidden');
+      
       openModal('itemModal');
     }
 
@@ -868,6 +893,14 @@
       document.getElementById('itemCurrentUnits').value = i.currentUnits || 0;
       document.getElementById('itemReorderPct').value = i.reorderPct || 30;
       toggleModeFields();
+      
+      // Show Delete button ONLY if the user is an Administrator
+      if (isUserAdmin()) {
+        document.getElementById('deleteItemBtn').classList.remove('hidden');
+      } else {
+        document.getElementById('deleteItemBtn').classList.add('hidden');
+      }
+
       openModal('itemModal');
     }
 
