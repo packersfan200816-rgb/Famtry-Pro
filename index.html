@@ -30,6 +30,10 @@
       left: 0;
       top: 0;
     }
+    /* Custom Scrollbar for dropdowns */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #1e293b; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
   </style>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen pb-20 font-sans">
@@ -126,13 +130,29 @@
           <input id="itemImage" placeholder="https://..." class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5" />
         </div>
         <div class="grid grid-cols-2 gap-2">
+          <!-- CUSTOM SEARCHABLE STORE DROPDOWN -->
           <div>
             <label class="block text-xs text-slate-400 mb-1">Store Name</label>
-            <input id="itemStore" placeholder="Walmart, Kroger, etc." class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5" />
+            <div class="relative">
+              <input id="itemStore" type="text" autocomplete="off" placeholder="Walmart, Kroger, etc." 
+                     class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 focus:outline-none focus:border-blue-500" 
+                     onfocus="showStoreDropdown()" oninput="filterStoreDropdown()" onblur="hideStoreDropdown()" />
+              <div id="storeDropdown" class="hidden absolute z-50 w-full mt-1 bg-slate-800 border border-slate-600 rounded shadow-xl max-h-40 overflow-y-auto">
+                <!-- Javascript will populate these options -->
+              </div>
+            </div>
           </div>
+          <!-- CUSTOM SEARCHABLE ASSORTMENT DROPDOWN -->
           <div>
             <label class="block text-xs text-slate-400 mb-1">Assortment / Group</label>
-            <input id="itemAssortment" placeholder="e.g. Cereal" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5" />
+            <div class="relative">
+              <input id="itemAssortment" type="text" autocomplete="off" placeholder="Search or select..." 
+                     class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 focus:outline-none focus:border-blue-500" 
+                     onfocus="showAssortmentDropdown()" oninput="filterAssortmentDropdown()" onblur="hideAssortmentDropdown()" />
+              <div id="assortmentDropdown" class="hidden absolute z-50 w-full mt-1 bg-slate-800 border border-slate-600 rounded shadow-xl max-h-40 overflow-y-auto">
+                <!-- Javascript will populate these options -->
+              </div>
+            </div>
           </div>
         </div>
         <div class="grid grid-cols-2 gap-2">
@@ -387,12 +407,10 @@
     async function fetchProductInfo(barcode) {
       let cleanCode = barcode.trim();
       
-      // Generate standard variants (12-digit UPC vs 13-digit EAN padding)
       const candidates = [cleanCode];
       if (cleanCode.length === 12) candidates.push('0' + cleanCode);
       else if (cleanCode.length === 13 && cleanCode.startsWith('0')) candidates.push(cleanCode.substring(1));
 
-      // Attempt 1: UPCitemdb (Massive database, but may block browser CORS)
       try {
         const upcCode = (cleanCode.length === 13 && cleanCode.startsWith('0')) ? cleanCode.substring(1) : cleanCode;
         const res = await fetch(`https://api.upcitemdb.com/prod/trial/lookup?upc=${upcCode}`);
@@ -408,11 +426,8 @@
             };
           }
         }
-      } catch (e) {
-        console.warn("UPCitemdb lookup failed/blocked", e);
-      }
+      } catch (e) {}
 
-      // Attempt 2: Open Facts Network (Searches Food, Pet Food, and Household Products)
       const offDomains = [
         'world.openfoodfacts.org',
         'world.openpetfoodfacts.org',
@@ -443,13 +458,9 @@
                 };
               }
             }
-          } catch (e) {
-            console.warn(`Lookup failed on ${domain} for ${code}`, e);
-          }
+          } catch (e) {}
         }
       }
-      
-      // If no database has it, return null so the user can name it manually
       return null;
     }
 
@@ -462,7 +473,6 @@
       const origText = searchBtn.innerText;
       searchBtn.innerText = 'Searching...';
 
-      // Check if item already exists in local inventory
       const existing = items.find(i => 
         i.barcode === val || 
         (val.length === 12 && i.barcode === '0' + val) ||
@@ -477,11 +487,9 @@
         return;
       }
 
-      // Query Databases
       const productData = await fetchProductInfo(val);
       searchBtn.innerText = origText;
 
-      // Only pass the barcode to the name field if productData is completely null (fallback)
       openAddItemModal({
         barcode: productData ? productData.barcode : val,
         name: productData && productData.name ? productData.name : val, 
@@ -533,7 +541,6 @@
         locate: true
       }, function(err) {
         if (err) {
-          console.error("Quagga Init Error:", err);
           alert("Could not start camera. Check permissions and ensure https:// is used.");
           container.classList.add('hidden');
           isScannerRunning = false;
@@ -557,14 +564,119 @@
       });
     }
 
-    // --- 7. REORDER LOGIC & CALCULATION ---
+    // --- CUSTOM SEARCHABLE DROPDOWNS (ASSORTMENT & STORE) ---
+
+    // 1. Assortments
+    function renderAssortmentDropdownOptions(filterText = '') {
+      const dropdown = document.getElementById('assortmentDropdown');
+      if (!dropdown) return;
+      
+      const filtered = assortments.filter(a => a.name.toLowerCase().includes(filterText.toLowerCase()));
+      
+      if (filtered.length === 0) {
+        dropdown.innerHTML = `<div class="px-3 py-2 text-xs text-slate-500 italic">No matching assortments found</div>`;
+        return;
+      }
+
+      dropdown.innerHTML = filtered.map(a => {
+        const safeName = a.name.replace(/'/g, "\\'");
+        return `<div class="px-3 py-2 text-sm cursor-pointer hover:bg-slate-700 text-slate-200 border-b border-slate-700/50 last:border-0" 
+             onmousedown="selectAssortment('${safeName}')">
+          ${a.name}
+        </div>`;
+      }).join('');
+    }
+
+    function showAssortmentDropdown() {
+      renderAssortmentDropdownOptions(document.getElementById('itemAssortment').value);
+      document.getElementById('assortmentDropdown').classList.remove('hidden');
+    }
+
+    function filterAssortmentDropdown() {
+      renderAssortmentDropdownOptions(document.getElementById('itemAssortment').value);
+    }
+
+    function hideAssortmentDropdown() {
+      setTimeout(() => {
+        const dd = document.getElementById('assortmentDropdown');
+        if (dd) dd.classList.add('hidden');
+      }, 150);
+    }
+
+    function selectAssortment(name) {
+      document.getElementById('itemAssortment').value = name;
+      document.getElementById('assortmentDropdown').classList.add('hidden');
+    }
+
+    // 2. Stores
+    function getUniqueStores() {
+      const stores = new Set();
+      items.forEach(i => {
+        if (i.store && i.store.trim() !== '') {
+          stores.add(i.store.trim());
+        }
+      });
+      return Array.from(stores).sort();
+    }
+
+    function renderStoreDropdownOptions(filterText = '') {
+      const dropdown = document.getElementById('storeDropdown');
+      if (!dropdown) return;
+      
+      const uniqueStores = getUniqueStores();
+      const filtered = uniqueStores.filter(s => s.toLowerCase().includes(filterText.toLowerCase()));
+      
+      if (filtered.length === 0) {
+        dropdown.innerHTML = `<div class="px-3 py-2 text-xs text-slate-500 italic">No matching stores found</div>`;
+        return;
+      }
+
+      dropdown.innerHTML = filtered.map(s => {
+        const safeName = s.replace(/'/g, "\\'");
+        return `<div class="px-3 py-2 text-sm cursor-pointer hover:bg-slate-700 text-slate-200 border-b border-slate-700/50 last:border-0" 
+             onmousedown="selectStore('${safeName}')">
+          ${s}
+        </div>`;
+      }).join('');
+    }
+
+    function showStoreDropdown() {
+      renderStoreDropdownOptions(document.getElementById('itemStore').value);
+      document.getElementById('storeDropdown').classList.remove('hidden');
+    }
+
+    function filterStoreDropdown() {
+      renderStoreDropdownOptions(document.getElementById('itemStore').value);
+    }
+
+    function hideStoreDropdown() {
+      setTimeout(() => {
+        const dd = document.getElementById('storeDropdown');
+        if (dd) dd.classList.add('hidden');
+      }, 150);
+    }
+
+    function selectStore(name) {
+      document.getElementById('itemStore').value = name;
+      document.getElementById('storeDropdown').classList.add('hidden');
+    }
+
+
+    // --- 7. ASSORTMENT MATH & REORDER LOGIC ---
+    function getAssortmentTotal(grpName) {
+      return items
+        .filter(i => i.assortment && i.assortment.trim().toLowerCase() === grpName.trim().toLowerCase())
+        .reduce((sum, curr) => {
+          let val = curr.mode === 'partial' ? (curr.currentUnits / (curr.fullCapacity || 1)) : (curr.currentCount || 0);
+          return sum + val;
+        }, 0);
+    }
+
     function isReorderNeeded(item) {
       if (item.assortment) {
-        const grp = assortments.find(a => a.name.toLowerCase() === item.assortment.toLowerCase());
+        const grp = assortments.find(a => a.name.trim().toLowerCase() === item.assortment.trim().toLowerCase());
         if (grp) {
-          const totalInGrp = items
-            .filter(i => i.assortment && i.assortment.toLowerCase() === grp.name.toLowerCase())
-            .reduce((sum, curr) => sum + (curr.currentCount || 0), 0);
+          const totalInGrp = getAssortmentTotal(grp.name);
           return totalInGrp <= grp.threshold;
         }
       }
@@ -654,8 +766,8 @@
     function renderAssortments() {
       const container = document.getElementById('assortmentContainer');
       container.innerHTML = assortments.map(a => {
-        const matches = items.filter(i => i.assortment && i.assortment.toLowerCase() === a.name.toLowerCase());
-        const total = matches.reduce((acc, curr) => acc + (curr.currentCount || 0), 0);
+        let total = getAssortmentTotal(a.name);
+        total = Math.round(total * 100) / 100; // Keep up to 2 decimal places for partials
         const low = total <= a.threshold;
         return `
           <div class="bg-slate-800 p-3 rounded-lg border ${low ? 'border-rose-500/50' : 'border-slate-700'} flex justify-between items-center">
