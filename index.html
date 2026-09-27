@@ -138,9 +138,7 @@
               <input id="itemStore" type="text" autocomplete="off" placeholder="Walmart, Kroger, etc." 
                      class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 focus:outline-none focus:border-blue-500" 
                      onfocus="showStoreDropdown()" oninput="filterStoreDropdown()" onblur="hideStoreDropdown()" />
-              <div id="storeDropdown" class="hidden absolute z-50 w-full mt-1 bg-slate-800 border border-slate-600 rounded shadow-xl max-h-40 overflow-y-auto">
-                <!-- Javascript will populate these options -->
-              </div>
+              <div id="storeDropdown" class="hidden absolute z-50 w-full mt-1 bg-slate-800 border border-slate-600 rounded shadow-xl max-h-40 overflow-y-auto"></div>
             </div>
           </div>
           <!-- CUSTOM SEARCHABLE ASSORTMENT DROPDOWN -->
@@ -150,9 +148,7 @@
               <input id="itemAssortment" type="text" autocomplete="off" placeholder="Search or select..." 
                      class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 focus:outline-none focus:border-blue-500" 
                      onfocus="showAssortmentDropdown()" oninput="filterAssortmentDropdown()" onblur="hideAssortmentDropdown()" />
-              <div id="assortmentDropdown" class="hidden absolute z-50 w-full mt-1 bg-slate-800 border border-slate-600 rounded shadow-xl max-h-40 overflow-y-auto">
-                <!-- Javascript will populate these options -->
-              </div>
+              <div id="assortmentDropdown" class="hidden absolute z-50 w-full mt-1 bg-slate-800 border border-slate-600 rounded shadow-xl max-h-40 overflow-y-auto"></div>
             </div>
           </div>
         </div>
@@ -236,10 +232,36 @@
     </div>
   </div>
 
+  <!-- MODAL: ADMIN EDIT OTHER USER SETTINGS -->
+  <div id="adminEditUserModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-slate-800 border border-slate-700 rounded-xl p-5 max-w-sm w-full space-y-4">
+      <div class="flex justify-between items-center border-b border-slate-700 pb-2">
+        <h3 class="font-bold text-base">Edit User: <span id="adminEditUserNameUI" class="text-emerald-400"></span></h3>
+        <button onclick="closeModal('adminEditUserModal')" class="text-slate-400 hover:text-white">&times;</button>
+      </div>
+      <input type="hidden" id="adminEditUserId" />
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">User PIN</label>
+          <!-- Using text input so Admin can clearly see the numbers -->
+          <input id="adminEditUserPin" type="text" maxlength="4" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-sm tracking-widest font-mono" />
+        </div>
+        <label class="flex items-center gap-2 cursor-pointer pt-2 border-t border-slate-700">
+          <input type="checkbox" id="adminEditUserAdmin" class="w-4 h-4 rounded bg-slate-900 border-slate-700" />
+          <span class="text-xs text-slate-300">Administrator (Can delete items)</span>
+        </label>
+      </div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button onclick="closeModal('adminEditUserModal')" class="px-3 py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-xs">Cancel</button>
+        <button onclick="saveAdminEditUser()" class="px-4 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 font-semibold text-xs">Save Changes</button>
+      </div>
+    </div>
+  </div>
+
   <!-- MODAL: USER PROFILES & PIN (LOGIN/CREATE/DELETE) -->
   <div id="profileModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-    <div class="bg-slate-800 border border-slate-700 rounded-xl p-5 max-w-sm w-full space-y-4">
-      <h3 class="font-bold text-base border-b border-slate-700 pb-2">Select or Add Profile</h3>
+    <div class="bg-slate-800 border border-slate-700 rounded-xl p-5 max-w-sm w-full flex flex-col max-h-[85vh]">
+      <h3 class="font-bold text-base border-b border-slate-700 pb-3 mb-3 shrink-0">Select or Add Profile</h3>
       
       <!-- HARDCODED HEIGHT CONTAINER FOR iOS SAFARI SCROLLING -->
       <div id="profileList" class="space-y-2 overflow-y-auto pr-1" style="max-height: 220px; -webkit-overflow-scrolling: touch;"></div>
@@ -276,7 +298,7 @@
         <h3 class="font-bold text-sm">Modification History</h3>
         <button onclick="closeModal('historyModal')" class="text-slate-400 hover:text-white">&times;</button>
       </div>
-      <div id="historyList" class="space-y-2 text-xs max-h-60 overflow-y-auto"></div>
+      <div id="historyList" class="space-y-2 text-xs max-h-60 overflow-y-auto pr-2"></div>
     </div>
   </div>
 
@@ -349,7 +371,8 @@
           <div class="flex items-center gap-2">
             <span class="text-[11px] text-slate-500">Tap to login</span>
             ${adminMode && p.name !== 'Daniel Rock' 
-              ? `<button onclick="deleteProfile(event, '${p.id}', '${p.name.replace(/'/g, "\\'")}')" class="text-rose-500 hover:text-rose-400 p-1 font-bold text-lg leading-none" title="Delete Profile">&times;</button>` 
+              ? `<button onclick="openAdminEditUser(event, '${p.id}', '${p.name.replace(/'/g, "\\'")}', '${p.pin}',${!!p.isAdmin})" class="text-blue-400 hover:text-blue-300 p-1 text-xs underline font-medium">Edit</button>
+                 <button onclick="deleteProfile(event, '${p.id}', '${p.name.replace(/'/g, "\\'")}')" class="text-rose-500 hover:text-rose-400 p-1 font-bold text-lg leading-none" title="Delete Profile">&times;</button>` 
               : ''}
           </div>
         </div>
@@ -368,7 +391,7 @@
     }
 
     async function deleteProfile(event, id, name) {
-      event.stopPropagation(); // Prevents the login prompt from triggering
+      event.stopPropagation();
       if (name === 'Daniel Rock') return alert("Cannot delete the primary owner account.");
       
       if (confirm(`Are you sure you want to permanently delete the profile for ${name}?`)) {
@@ -378,8 +401,33 @@
           localStorage.removeItem('pantry_user');
           updateCurrentUserUI();
         }
-        renderProfiles(); // Refresh list immediately
+        renderProfiles();
       }
+    }
+
+    function openAdminEditUser(event, id, name, pin, isAdmin) {
+      event.stopPropagation();
+      document.getElementById('adminEditUserId').value = id;
+      document.getElementById('adminEditUserNameUI').innerText = name;
+      document.getElementById('adminEditUserPin').value = pin;
+      document.getElementById('adminEditUserAdmin').checked = isAdmin;
+      openModal('adminEditUserModal');
+    }
+
+    async function saveAdminEditUser() {
+      const id = document.getElementById('adminEditUserId').value;
+      const pin = document.getElementById('adminEditUserPin').value.trim();
+      const isAdmin = document.getElementById('adminEditUserAdmin').checked;
+      
+      if (pin.length !== 4) return alert("PIN must be exactly 4 digits.");
+      
+      await db.collection('profiles').doc(id).update({
+        pin: pin,
+        isAdmin: isAdmin
+      });
+      
+      closeModal('adminEditUserModal');
+      renderProfiles();
     }
 
     function requestPin(userName) {
@@ -411,7 +459,7 @@
       return true;
     }
 
-    // --- PROFILE SETTINGS (CHANGE PIN & ADMIN TOGGLE) ---
+    // --- PROFILE SETTINGS (YOUR OWN PROFILE) ---
     function openMyProfile() {
       if (!currentUser) return;
       const profile = profiles.find(p => p.name === currentUser);
@@ -504,27 +552,42 @@
       const container = document.getElementById('historyList');
       container.innerHTML = '<p class="text-slate-400">Loading history...</p>';
       
-      const snap = await db.collection('audit_logs')
-        .where('itemId', '==', id)
-        .orderBy('timestamp', 'desc')
-        .limit(20)
-        .get();
+      try {
+        // Fix: Removed .orderBy() to bypass Firebase's hidden composite index crash
+        const snap = await db.collection('audit_logs')
+          .where('itemId', '==', id)
+          .get();
 
-      if (snap.empty) {
-        container.innerHTML = '<p class="text-slate-400">No modifications logged yet.</p>';
-        return;
+        if (snap.empty) {
+          container.innerHTML = '<p class="text-slate-400">No modifications logged yet.</p>';
+          return;
+        }
+
+        // Sort descending locally in the browser
+        let logs = snap.docs.map(d => d.data());
+        logs.sort((a, b) => {
+          const tA = a.timestamp ? a.timestamp.toMillis() : 0;
+          const tB = b.timestamp ? b.timestamp.toMillis() : 0;
+          return tB - tA;
+        });
+
+        // Show only the most recent 20 edits
+        logs = logs.slice(0, 20);
+
+        container.innerHTML = logs.map(l => {
+          const date = l.timestamp ? l.timestamp.toDate().toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}) : 'Just now';
+          return `
+            <div class="border-b border-slate-700/60 pb-1.5">
+              <span class="text-emerald-400 font-semibold">${l.user}</span>: ${l.action}
+              <div class="text-[10px] text-slate-500">${date}</div>
+            </div>
+          `;
+        }).join('');
+        
+      } catch(err) {
+        console.error("History fetch error:", err);
+        container.innerHTML = '<p class="text-rose-400">Error loading history.</p>';
       }
-
-      container.innerHTML = snap.docs.map(d => {
-        const l = d.data();
-        const date = l.timestamp ? l.timestamp.toDate().toLocaleString() : 'Just now';
-        return `
-          <div class="border-b border-slate-700/60 pb-1.5">
-            <span class="text-emerald-400 font-semibold">${l.user}</span>: ${l.action}
-            <div class="text-[10px] text-slate-500">${date}</div>
-          </div>
-        `;
-      }).join('');
     }
 
     async function deleteItem() {
@@ -938,7 +1001,7 @@
     function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
     
     function openProfileModal() { 
-      renderProfiles(); // Re-render to ensure admin delete buttons show correctly
+      renderProfiles(); // Re-render to ensure admin edit/delete buttons show correctly
       openModal('profileModal'); 
     }
 
