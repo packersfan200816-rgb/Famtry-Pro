@@ -1,1236 +1,1235 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Family Pantry Tracker</title>
-  <link rel="manifest" href="manifest.json" />
-  <meta name="theme-color" content="#1e293b" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="Family Pantry" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Family Pantry Tracker</title>
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#1e293b" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Family Pantry" />
 
-  <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Barcode Engine -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
-  <!-- Firebase SDKs -->
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Barcode Engine -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 
-  <style>
-    #interactive.viewport {
-      position: relative;
-      width: 100%;
-      height: auto;
-      overflow: hidden;
-      border-radius: 0.5rem;
-    }
-    #interactive.viewport > canvas, #interactive.viewport > video {
-      max-width: 100%;
-      width: 100%;
-      height: auto;
-    }
-    canvas.drawing, canvas.drawingBuffer {
-      position: absolute;
-      left: 0;
-      top: 0;
-    }
-    ::-webkit-scrollbar { width: 6px; }
-    ::-webkit-scrollbar-track { background: #1e293b; border-radius: 4px; }
-    ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
-  </style>
+  <style>
+    #interactive.viewport {
+      position: relative;
+      width: 100%;
+      height: auto;
+      overflow: hidden;
+      border-radius: 0.5rem;
+    }
+    #interactive.viewport > canvas, #interactive.viewport > video {
+      max-width: 100%;
+      width: 100%;
+      height: auto;
+    }
+    canvas.drawing, canvas.drawingBuffer {
+      position: absolute;
+      left: 0;
+      top: 0;
+    }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #1e293b; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+  </style>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen pb-20 font-sans">
 
-  <!-- TOP APP BAR -->
-  <header class="bg-slate-800 border-b border-slate-700 px-4 py-3 sticky top-0 z-30 flex justify-between items-center shadow-md">
-    <div class="flex items-center gap-2">
-      <span class="text-2xl">🛒</span>
-      <h1 class="text-lg font-bold tracking-tight">Family Pantry</h1>
-    </div>
-    <div class="flex items-center gap-2">
-      <button onclick="openMyProfile()" id="currentUserDisplay" title="Edit Profile" class="text-xs bg-slate-700 hover:bg-slate-600 px-2.5 py-1 rounded-full border border-slate-600 font-medium text-emerald-400 transition cursor-pointer">Not logged in</button>
-      <button onclick="openProfileModal()" class="text-xs bg-blue-600 hover:bg-blue-500 text-white px-2.5 py-1 rounded transition">Switch User</button>
-    </div>
-  </header>
-
-  <!-- NAVIGATION TABS -->
-  <nav class="flex border-b border-slate-700 bg-slate-800/80 backdrop-blur sticky top-[53px] z-20">
-    <button onclick="switchTab('inventory')" id="tab-inventory" class="flex-1 py-3 text-center text-sm font-semibold border-b-2 border-emerald-500 text-emerald-400">Inventory</button>
-    <button onclick="switchTab('reorder')" id="tab-reorder" class="flex-1 py-3 text-center text-sm font-semibold border-b-2 border-transparent text-slate-400">Needs Reorder (<span id="reorderCountBadge">0</span>)</button>
-    <button onclick="switchTab('assortments')" id="tab-assortments" class="flex-1 py-3 text-center text-sm font-semibold border-b-2 border-transparent text-slate-400">Assortments</button>
-  </nav>
-
-  <main class="max-w-3xl mx-auto p-4 space-y-4">
-
-    <!-- SCANNER & QUICK ADD ACTION BAR -->
-    <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm space-y-3">
-      <div class="flex gap-2">
-        <input id="barcodeInput" type="text" placeholder="Scan barcode or type item/SKU..." 
-               class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
-               onkeydown="if(event.key==='Enter') handleManualLookup()" />
-        <button id="searchBtn" onclick="handleManualLookup()" class="bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded-lg text-sm font-medium">Search</button>
-        <button onclick="toggleCameraScanner()" class="bg-emerald-600 hover:bg-emerald-500 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-1">
-          📷 <span class="hidden sm:inline">Camera</span>
-        </button>
-      </div>
-
-      <!-- CAMERA SCANNER CONTAINER -->
-      <div id="reader-container" class="hidden flex flex-col items-center p-3 bg-slate-900 rounded-lg border border-slate-700">
-        <div id="interactive" class="viewport w-full max-w-sm"></div>
-        <p class="text-xs text-slate-400 mt-2">Align the barcode horizontally inside the box</p>
-        <button onclick="toggleCameraScanner()" class="mt-2 text-xs text-rose-400 hover:underline">Close Camera</button>
-      </div>
-    </div>
-
-    <!-- TAB: INVENTORY VIEW -->
-    <section id="view-inventory" class="space-y-3">
-      <div class="flex justify-between items-center px-1">
-        <input id="listFilter" oninput="renderLists()" placeholder="Filter items by name or store..." 
-               class="bg-slate-800 border border-slate-700 text-xs rounded-md px-3 py-1.5 w-64 focus:outline-none focus:border-blue-500" />
-        <button onclick="openAddItemModal()" class="text-xs bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded font-medium">+ Add New</button>
-      </div>
-      <div id="inventoryContainer" class="space-y-2"></div>
-    </section>
-
-    <!-- TAB: REORDER & SHOPPING LIST -->
-    <section id="view-reorder" class="hidden space-y-4">
-      <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
-        <h2 class="text-sm font-semibold uppercase text-slate-400 tracking-wider mb-2">Estimated Shopping List Total</h2>
-        <div id="storePriceBreakdown" class="space-y-1 text-sm"></div>
-      </div>
-      <div id="reorderContainer" class="space-y-2"></div>
-    </section>
-
-    <!-- TAB: ASSORTMENTS VIEW -->
-    <section id="view-assortments" class="hidden space-y-3">
-      <div class="flex justify-between items-center px-1">
-        <p class="text-xs text-slate-400">Pool interchangeable items (e.g. Cereal, Sodas) to alert only when the group drops below threshold.</p>
-        <button onclick="openCreateAssortmentModal()" class="text-xs bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded font-medium whitespace-nowrap">+ Assortment</button>
-      </div>
-      <div id="assortmentContainer" class="space-y-2"></div>
-    </section>
-  </main>
-
-  <!-- MODAL: ADD / EDIT ITEM -->
-  <div id="itemModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-    <div class="bg-slate-800 border border-slate-700 rounded-xl p-5 max-w-md w-full space-y-3 max-h-[90vh] overflow-y-auto">
-      <div class="flex justify-between items-center border-b border-slate-700 pb-2">
-        <h3 id="itemModalTitle" class="font-bold text-base">Item Details</h3>
-        <button onclick="closeModal('itemModal')" class="text-slate-400 hover:text-white">&times;</button>
-      </div>
-      <input type="hidden" id="itemId" />
-      <div class="space-y-2 text-sm">
-        <div>
-          <label class="block text-xs text-slate-400 mb-1">Barcode / SKU</label>
-          <input id="itemBarcode" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5" />
-        </div>
-        <div>
-          <label class="block text-xs text-slate-400 mb-1">Product Name</label>
-          <input id="itemName" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5" required />
-        </div>
-        <div>
-          <label class="block text-xs text-slate-400 mb-1">Image URL</label>
-          <input id="itemImage" placeholder="https://..." class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5" />
-        </div>
-        <div class="grid grid-cols-2 gap-2">
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">Store Name</label>
-            <div class="relative">
-              <input id="itemStore" type="text" autocomplete="off" placeholder="Walmart, Kroger, etc." 
-                     class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 focus:outline-none focus:border-blue-500" 
-                     onfocus="showStoreDropdown()" oninput="filterStoreDropdown()" onblur="hideStoreDropdown()" />
-              <div id="storeDropdown" class="hidden absolute z-50 w-full mt-1 bg-slate-800 border border-slate-600 rounded shadow-xl max-h-40 overflow-y-auto"></div>
-            </div>
-          </div>
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">Assortment / Group</label>
-            <div class="relative">
-              <input id="itemAssortment" type="text" autocomplete="off" placeholder="Search or select..." 
-                     class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 focus:outline-none focus:border-blue-500" 
-                     onfocus="showAssortmentDropdown()" oninput="filterAssortmentDropdown()" onblur="hideAssortmentDropdown()" />
-              <div id="assortmentDropdown" class="hidden absolute z-50 w-full mt-1 bg-slate-800 border border-slate-600 rounded shadow-xl max-h-40 overflow-y-auto"></div>
-            </div>
-          </div>
-        </div>
-        <div class="grid grid-cols-2 gap-2">
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">Your Price ($)</label>
-            <input id="itemPrice" type="number" step="0.01" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5" />
-          </div>
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">Ballpark Price ($)</label>
-            <input id="itemBallparkPrice" type="number" step="0.01" disabled class="w-full bg-slate-900 border border-slate-700 text-slate-500 rounded px-2.5 py-1.5" />
-          </div>
-        </div>
-        <div>
-          <label class="block text-xs text-slate-400 mb-1">Tracking Mode</label>
-          <select id="itemMode" onchange="toggleModeFields()" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5">
-            <option value="count">Count Mode (Discrete packages/cans)</option>
-            <option value="partial">Percentage / Partial Use (e.g. toilet paper, chicken)</option>
-          </select>
-        </div>
-        <div id="countFields" class="grid grid-cols-2 gap-2">
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">Current Units</label>
-            <input id="itemCurrentCount" type="number" step="1" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5" />
-          </div>
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">Reorder Threshold</label>
-            <input id="itemMinCount" type="number" step="1" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5" />
-          </div>
-        </div>
-        <div id="partialFields" class="hidden grid grid-cols-3 gap-2">
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">Full Pack Capacity</label>
-            <input id="itemFullCapacity" type="number" step="0.1" placeholder="e.g. 12" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5" />
-          </div>
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">Current Units Left</label>
-            <input id="itemCurrentUnits" type="number" step="0.1" placeholder="e.g. 4" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5" />
-          </div>
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">Reorder At %</label>
-            <input id="itemReorderPct" type="number" step="1" placeholder="e.g. 30" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5" />
-          </div>
-        </div>
-      </div>
-      <div class="flex justify-between items-center pt-3 border-t border-slate-700">
-        <button id="deleteItemBtn" onclick="deleteItem()" class="hidden px-3 py-1.5 rounded bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition">Delete Item</button>
-        <div class="flex gap-2 ml-auto">
-          <button onclick="closeModal('itemModal')" class="px-3 py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-xs">Cancel</button>
-          <button onclick="saveItem()" class="px-4 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 font-semibold text-xs">Save</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- MODAL: MY PROFILE SETTINGS -->
-  <div id="myProfileModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-    <div class="bg-slate-800 border border-slate-700 rounded-xl p-5 max-w-sm w-full space-y-4">
-      <div class="flex justify-between items-center border-b border-slate-700 pb-2">
-        <h3 class="font-bold text-base">Profile Settings: <span id="myProfileNameUI" class="text-emerald-400"></span></h3>
-        <button onclick="closeModal('myProfileModal')" class="text-slate-400 hover:text-white">&times;</button>
-      </div>
-      <div class="space-y-3">
-        <div>
-          <label class="block text-xs text-slate-400 mb-1">Verify Current PIN</label>
-          <input id="myProfileOldPin" type="password" maxlength="4" placeholder="Current PIN" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-sm" />
-        </div>
-        <div>
-          <label class="block text-xs text-slate-400 mb-1">New PIN (Optional)</label>
-          <input id="myProfileNewPin" type="password" maxlength="4" placeholder="New 4-Digit PIN" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-sm" />
-        </div>
-        <label class="flex items-center gap-2 cursor-pointer pt-2 border-t border-slate-700">
-          <input type="checkbox" id="myProfileAdmin" class="w-4 h-4 rounded bg-slate-900 border-slate-700" />
-          <span class="text-xs text-slate-300">Administrator (Can delete items)</span>
-        </label>
-      </div>
-      <div class="flex justify-end gap-2 pt-2">
-        <button onclick="closeModal('myProfileModal')" class="px-3 py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-xs">Cancel</button>
-        <button onclick="saveMyProfile()" class="px-4 py-1.5 rounded bg-blue-600 hover:bg-blue-500 font-semibold text-xs">Save Profile</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- MODAL: ADMIN EDIT OTHER USER SETTINGS -->
-  <div id="adminEditUserModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-    <div class="bg-slate-800 border border-slate-700 rounded-xl p-5 max-w-sm w-full space-y-4">
-      <div class="flex justify-between items-center border-b border-slate-700 pb-2">
-        <h3 class="font-bold text-base">Edit User: <span id="adminEditUserNameUI" class="text-emerald-400"></span></h3>
-        <button onclick="closeModal('adminEditUserModal')" class="text-slate-400 hover:text-white">&times;</button>
-      </div>
-      <input type="hidden" id="adminEditUserId" />
-      <div class="space-y-3">
-        <div>
-          <label class="block text-xs text-slate-400 mb-1">User PIN</label>
-          <input id="adminEditUserPin" type="text" maxlength="4" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-sm tracking-widest font-mono" />
-        </div>
-        <label class="flex items-center gap-2 cursor-pointer pt-2 border-t border-slate-700">
-          <input type="checkbox" id="adminEditUserAdmin" class="w-4 h-4 rounded bg-slate-900 border-slate-700" />
-          <span class="text-xs text-slate-300">Administrator (Can delete items)</span>
-        </label>
-      </div>
-      <div class="flex justify-end gap-2 pt-2">
-        <button onclick="closeModal('adminEditUserModal')" class="px-3 py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-xs">Cancel</button>
-        <button onclick="saveAdminEditUser()" class="px-4 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 font-semibold text-xs">Save Changes</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- MODAL: USER PROFILES & PIN -->
-  <div id="profileModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-    <div class="bg-slate-800 border border-slate-700 rounded-xl p-5 max-w-sm w-full flex flex-col max-h-[85vh]">
-      <h3 class="font-bold text-base border-b border-slate-700 pb-3 mb-3 shrink-0">Select or Add Profile</h3>
-      <div id="profileList" class="space-y-2 overflow-y-auto pr-1" style="max-height: 250px; -webkit-overflow-scrolling: touch;"></div>
-      
-      <div class="border-t border-slate-700 pt-3 space-y-2 shrink-0">
-        <p class="text-xs text-slate-400 font-semibold">Create New Profile</p>
-        <input id="newProfileName" placeholder="Name" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs" />
-        <input id="newProfilePin" type="password" maxlength="4" placeholder="4-Digit PIN" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs" />
-        <label class="flex items-center gap-2 cursor-pointer pb-1 pt-1">
-          <input type="checkbox" id="newProfileAdmin" class="w-4 h-4 rounded bg-slate-900 border-slate-700" />
-          <span class="text-xs text-slate-400">Make Administrator</span>
-        </label>
-        <button onclick="createProfile()" class="w-full bg-blue-600 hover:bg-blue-500 py-1.5 rounded text-xs font-semibold">Create Profile</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- MODAL: PIN VERIFICATION -->
-  <div id="pinModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-    <div class="bg-slate-800 border border-slate-700 rounded-xl p-5 max-w-xs w-full space-y-3 text-center">
-      <h3 class="font-bold text-sm">Enter PIN for <span id="pinTargetUser"></span></h3>
-      <input id="pinEntry" type="password" maxlength="4" class="w-24 text-center tracking-widest text-lg bg-slate-900 border border-slate-700 rounded py-1.5 mx-auto" />
-      <div class="flex justify-center gap-2 pt-2">
-        <button onclick="closeModal('pinModal')" class="px-3 py-1 bg-slate-700 rounded text-xs">Cancel</button>
-        <button onclick="verifyPin()" class="px-3 py-1 bg-emerald-600 rounded text-xs font-semibold">Confirm</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- MODAL: AUDIT HISTORY -->
-  <div id="historyModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-    <div class="bg-slate-800 border border-slate-700 rounded-xl p-5 max-w-md w-full space-y-3">
-      <div class="flex justify-between items-center border-b border-slate-700 pb-2">
-        <h3 class="font-bold text-sm">Modification History</h3>
-        <button onclick="closeModal('historyModal')" class="text-slate-400 hover:text-white">&times;</button>
-      </div>
-      <div id="historyList" class="space-y-2 text-xs max-h-60 overflow-y-auto pr-2"></div>
-    </div>
-  </div>
-
-  <!-- MODAL: CREATE ASSORTMENT -->
-  <div id="assortmentModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-    <div class="bg-slate-800 border border-slate-700 rounded-xl p-5 max-w-xs w-full space-y-3">
-      <div class="flex justify-between items-center border-b border-slate-700 pb-2">
-        <h3 class="font-bold text-sm">Manage Assortment</h3>
-        <button onclick="closeModal('assortmentModal')" class="text-slate-400 hover:text-white">&times;</button>
-      </div>
-      <input id="assortmentName" placeholder="Group Name (e.g. Cereal)" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs" />
-      <input id="assortmentThreshold" type="number" placeholder="Total Min Count" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs" />
-      <button onclick="saveAssortment()" class="w-full bg-emerald-600 hover:bg-emerald-500 py-1.5 rounded text-xs font-semibold">Save</button>
-    </div>
-  </div>
-
-  <script>
-    // --- 1. FIREBASE SETUP & PERSISTENCE ---
-    const firebaseConfig = {
-      apiKey: "AIzaSyDifh3hjDZ5_ElC2jSBGwnaTkZChsuri-I",
-      authDomain: "grocery-inventory-pro.firebaseapp.com",
-      projectId: "grocery-inventory-pro"
-    };
-
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.firestore();
-
-    db.enablePersistence({ synchronizeTabs: true }).catch(err => {
-      console.warn("Firestore offline persistence unavailable:", err.code);
-    });
-
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js').catch(console.error);
-    }
-
-    let currentUser = localStorage.getItem('pantry_user') || null;
-    let items = [];
-    let assortments = [];
-    let profiles = [];
-    let selectedProfileToVerify = null;
-    let isScannerRunning = false;
-
-    // --- 2. AUTH, PROFILES & ADMIN ---
-    function updateCurrentUserUI() {
-      const el = document.getElementById('currentUserDisplay');
-      el.innerText = currentUser ? currentUser : 'Select User';
-    }
-    updateCurrentUserUI();
-
-    db.collection('profiles').onSnapshot(snap => {
-      profiles = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      if (document.getElementById('profileModal').classList.contains('hidden') === false || !currentUser) {
-        renderProfiles();
-      }
-      if (!currentUser && profiles.length > 0) openProfileModal();
-    });
-
-    function isUserAdmin() {
-      if (currentUser === 'Daniel Rock') return true;
-      const profile = profiles.find(p => p.name === currentUser);
-      return profile ? !!profile.isAdmin : false;
-    }
-
-    function renderProfiles() {
-      const list = document.getElementById('profileList');
-      const adminMode = isUserAdmin();
-      
-      list.innerHTML = profiles.map(p => {
-        const safeName = p.name.replace(/'/g, "\\'");
-        const isOwner = p.name === 'Daniel Rock';
-        
-        let actionsHtml = '';
-        if (adminMode) {
-          actionsHtml += `<button onclick="openAdminEditUser(event, '${p.id}', '${safeName}', '${p.pin}', ${!!p.isAdmin})" class="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-[11px] text-blue-400 hover:text-blue-300 font-semibold shadow-sm transition">Edit</button>`;
-          if (!isOwner) {
-            actionsHtml += `<button onclick="deleteProfile(event, '${p.id}', '${safeName}')" class="bg-rose-900/40 border border-rose-800/80 rounded px-2 py-1 text-[11px] text-rose-400 hover:text-rose-300 font-bold shadow-sm transition">&times;</button>`;
-          }
-        } else {
-          actionsHtml = `<span class="text-[11px] text-slate-500">Tap to login</span>`;
-        }
-
-        return `
-        <div class="flex justify-between items-center p-2.5 bg-slate-900 rounded border border-slate-700 hover:border-blue-500 cursor-pointer mb-1.5" style="flex-shrink: 0;" onclick="requestPin('${safeName}')">
-          <div class="flex items-center gap-1.5 min-w-0 pr-2">
-            <span class="text-sm font-semibold truncate">${p.name}</span>
-            ${p.isAdmin ? '<span class="text-[9px] bg-blue-500/20 text-blue-300 px-1 py-0.5 rounded font-medium shrink-0 uppercase tracking-wider">Admin</span>' : ''}
-          </div>
-          <div class="flex items-center gap-1.5 shrink-0">
-            ${actionsHtml}
-          </div>
-        </div>
-        `;
-      }).join('');
-    }
-
-    function createProfile() {
-      const name = document.getElementById('newProfileName').value.trim();
-      const pin = document.getElementById('newProfilePin').value.trim();
-      const isAdmin = document.getElementById('newProfileAdmin').checked;
-      if (!name || pin.length !== 4) return alert('Enter a valid name and 4-digit PIN');
-      db.collection('profiles').add({ name, pin, isAdmin });
-      document.getElementById('newProfileName').value = '';
-      document.getElementById('newProfilePin').value = '';
-      document.getElementById('newProfileAdmin').checked = false;
-    }
-
-    async function deleteProfile(event, id, name) {
-      event.stopPropagation();
-      if (name === 'Daniel Rock') return alert("Cannot delete the primary owner account.");
-      
-      if (confirm(`Are you sure you want to permanently delete the profile for ${name}?`)) {
-        await db.collection('profiles').doc(id).delete();
-        if (currentUser === name) {
-          currentUser = null;
-          localStorage.removeItem('pantry_user');
-          updateCurrentUserUI();
-        }
-        renderProfiles();
-      }
-    }
-
-    function openAdminEditUser(event, id, name, pin, isAdmin) {
-      event.stopPropagation();
-      document.getElementById('adminEditUserId').value = id;
-      document.getElementById('adminEditUserNameUI').innerText = name;
-      document.getElementById('adminEditUserPin').value = pin;
-      
-      const adminCheckbox = document.getElementById('adminEditUserAdmin');
-      adminCheckbox.checked = isAdmin;
-      
-      if (name === 'Daniel Rock') {
-        adminCheckbox.disabled = true;
-        adminCheckbox.checked = true;
-      } else {
-        adminCheckbox.disabled = false;
-      }
-      
-      openModal('adminEditUserModal');
-    }
-
-    async function saveAdminEditUser() {
-      const id = document.getElementById('adminEditUserId').value;
-      const pin = document.getElementById('adminEditUserPin').value.trim();
-      const isAdmin = document.getElementById('adminEditUserAdmin').checked;
-      
-      if (pin.length !== 4) return alert("PIN must be exactly 4 digits.");
-      
-      await db.collection('profiles').doc(id).update({
-        pin: pin,
-        isAdmin: isAdmin
-      });
-      
-      closeModal('adminEditUserModal');
-      renderProfiles();
-    }
-
-    function requestPin(userName) {
-      selectedProfileToVerify = profiles.find(p => p.name === userName);
-      document.getElementById('pinTargetUser').innerText = userName;
-      document.getElementById('pinEntry').value = '';
-      closeModal('profileModal');
-      openModal('pinModal');
-    }
-
-    function verifyPin() {
-      const entered = document.getElementById('pinEntry').value;
-      if (selectedProfileToVerify && entered === selectedProfileToVerify.pin) {
-        currentUser = selectedProfileToVerify.name;
-        localStorage.setItem('pantry_user', currentUser);
-        updateCurrentUserUI();
-        closeModal('pinModal');
-      } else {
-        alert('Incorrect PIN');
-      }
-    }
-
-    function checkUser() {
-      if (!currentUser) {
-        renderProfiles();
-        openProfileModal();
-        return false;
-      }
-      return true;
-    }
-
-    function openMyProfile() {
-      if (!currentUser) return;
-      const profile = profiles.find(p => p.name === currentUser);
-      if (!profile) return;
-      
-      document.getElementById('myProfileNameUI').innerText = profile.name;
-      document.getElementById('myProfileOldPin').value = '';
-      document.getElementById('myProfileNewPin').value = '';
-      document.getElementById('myProfileAdmin').checked = profile.isAdmin || currentUser === 'Daniel Rock';
-      
-      openModal('myProfileModal');
-    }
-
-    async function saveMyProfile() {
-      const profile = profiles.find(p => p.name === currentUser);
-      if (!profile) return;
-      
-      const oldPin = document.getElementById('myProfileOldPin').value;
-      const newPin = document.getElementById('myProfileNewPin').value;
-      const isAdmin = document.getElementById('myProfileAdmin').checked;
-      
-      if (oldPin !== profile.pin) {
-        return alert("Current PIN is incorrect. You must verify your current PIN to make changes.");
-      }
-      
-      let updatedPin = profile.pin;
-      if (newPin) {
-        if (newPin.length !== 4) return alert("New PIN must be exactly 4 digits.");
-        updatedPin = newPin;
-      }
-      
-      await db.collection('profiles').doc(profile.id).update({
-        pin: updatedPin,
-        isAdmin: isAdmin
-      });
-      
-      closeModal('myProfileModal');
-      alert("Profile updated successfully!");
-    }
-
-    // --- 3. FIRESTORE REAL-TIME SYNC ---
-    db.collection('items').onSnapshot(snap => {
-      items = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      renderLists();
-    });
-
-    db.collection('assortments').onSnapshot(snap => {
-      assortments = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      renderAssortments();
-    });
-
-    // --- 4. ITEM MODIFICATIONS & AUDIT TRAIL ---
-    async function logAction(itemId, itemName, actionText) {
-      if (!currentUser) return;
-      await db.collection('audit_logs').add({
-        itemId,
-        itemName,
-        user: currentUser,
-        action: actionText,
-        timestamp: firebase.firestore.FieldValue.serverTimestamp()
-      });
-    }
-
-    async function adjustCount(id, delta) {
-      if (!checkUser()) return;
-      const item = items.find(i => i.id === id);
-      if (!item) return;
-
-      if (item.mode === 'partial') {
-        const cur = Number(item.currentUnits) || 0;
-        let newUnits = Math.max(0, +(cur + delta).toFixed(1));
-        await db.collection('items').doc(id).update({ 
-          currentUnits: newUnits,
-          lastModifiedBy: currentUser,
-          lastModifiedAt: firebase.firestore.FieldValue.serverTimestamp()
-        });
-        logAction(id, item.name, `Adjusted remaining units to ${newUnits}`);
-      } else {
-        const cur = Number(item.currentCount) || 0;
-        let newCount = Math.max(0, cur + delta);
-        await db.collection('items').doc(id).update({ 
-          currentCount: newCount,
-          lastModifiedBy: currentUser,
-          lastModifiedAt: firebase.firestore.FieldValue.serverTimestamp()
-        });
-        logAction(id, item.name, `${delta > 0 ? 'Scanned IN' : 'Scanned OUT'} (Total: ${newCount})`);
-      }
-    }
-
-    async function showHistory(id) {
-      openModal('historyModal');
-      const container = document.getElementById('historyList');
-      container.innerHTML = '<p class="text-slate-400">Loading history...</p>';
-      
-      try {
-        const snap = await db.collection('audit_logs')
-          .where('itemId', '==', id)
-          .get();
-
-        if (snap.empty) {
-          container.innerHTML = '<p class="text-slate-400">No modifications logged yet.</p>';
-          return;
-        }
-
-        let logs = snap.docs.map(d => d.data());
-        logs.sort((a, b) => {
-          const tA = a.timestamp ? a.timestamp.toMillis() : 0;
-          const tB = b.timestamp ? b.timestamp.toMillis() : 0;
-          return tB - tA;
-        });
-
-        logs = logs.slice(0, 20);
-
-        container.innerHTML = logs.map(l => {
-          const date = l.timestamp ? l.timestamp.toDate().toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}) : 'Just now';
-          return `
-            <div class="border-b border-slate-700/60 pb-1.5">
-              <span class="text-emerald-400 font-semibold">${l.user}</span>: ${l.action}
-              <div class="text-[10px] text-slate-500">${date}</div>
-            </div>
-          `;
-        }).join('');
-        
-      } catch(err) {
-        console.error("History fetch error:", err);
-        container.innerHTML = '<p class="text-rose-400">Error loading history.</p>';
-      }
-    }
-
-    async function deleteItem() {
-      const id = document.getElementById('itemId').value;
-      if (!id) return;
-      const item = items.find(i => i.id === id);
-      const itemName = item ? item.name : 'Unknown Item';
-
-      if (confirm(`Permanently delete "${itemName}"? This cannot be undone.`)) {
-        await logAction(id, itemName, 'Deleted item from inventory');
-        await db.collection('items').doc(id).delete();
-        closeModal('itemModal');
-      }
-    }
-
-    // --- 5. COMPREHENSIVE PRODUCT LOOKUP ENGINE (FAST TIMEOUT) ---
-    async function fetchWithTimeout(url, timeoutMs = 2500) {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
-      try {
-        const response = await fetch(url, { signal: controller.signal });
-        clearTimeout(timer);
-        return response;
-      } catch (e) {
-        clearTimeout(timer);
-        return null;
-      }
-    }
-
-    async function fetchProductInfo(barcode) {
-      let cleanCode = barcode.trim();
-      const candidates = [cleanCode];
-      if (cleanCode.length === 12) candidates.push('0' + cleanCode);
-      else if (cleanCode.length === 13 && cleanCode.startsWith('0')) candidates.push(cleanCode.substring(1));
-
-      for (const code of candidates) {
-        try {
-          const res = await fetchWithTimeout(`https://world.openfoodfacts.org/api/v0/product/${code}.json`, 2500);
-          if (res && res.ok) {
-            const data = await res.json();
-            if (data && data.status === 1 && data.product) {
-              const p = data.product;
-              const brand = p.brands ? p.brands.split(',')[0].trim() : '';
-              const rawName = p.product_name || p.product_name_en || p.generic_name || '';
-              const fullName = brand && rawName && !rawName.toLowerCase().includes(brand.toLowerCase())
-                ? `${brand} ${rawName}`
-                : (rawName || brand);
-
-              if (fullName) {
-                return {
-                  barcode: barcode,
-                  name: fullName,
-                  image: p.image_front_small_url || p.image_front_thumb_url || p.image_front_url || '',
-                  ballparkPrice: ''
-                };
-              }
-            }
-          }
-        } catch (e) {}
-      }
-      return null;
-    }
-
-    async function handleManualLookup() {
-      const inputEl = document.getElementById('barcodeInput');
-      const val = inputEl.value.trim();
-      if (!val) return;
-
-      const searchBtn = document.getElementById('searchBtn');
-      const origText = searchBtn.innerText;
-      searchBtn.innerText = 'Searching...';
-
-      const existing = items.find(i => 
-        (i.barcode && i.barcode === val) || 
-        (val.length === 12 && i.barcode === '0' + val) ||
-        (i.barcode && i.barcode.length === 12 && '0' + i.barcode === val) ||
-        (i.name && i.name.toLowerCase() === val.toLowerCase())
-      );
-
-      if (existing) {
-        adjustCount(existing.id, 1);
-        inputEl.value = '';
-        searchBtn.innerText = origText;
-        alert(`✓ Added +1 to existing item: "${existing.name}" (Total: ${(Number(existing.currentCount) || 0) + 1})`);
-        return;
-      }
-
-      const productData = await fetchProductInfo(val);
-      searchBtn.innerText = origText;
-
-      openAddItemModal({
-        barcode: productData ? productData.barcode : val,
-        name: productData && productData.name ? productData.name : '', 
-        image: productData ? productData.image : '',
-        ballparkPrice: productData ? productData.ballparkPrice : ''
-      });
-      inputEl.value = '';
-    }
-
-    // --- 6. QUAGGA SCANNER ENGINE & CAMERA CLEANUP ---
-    function stopCameraStream() {
-      try {
-        Quagga.offDetected();
-        Quagga.stop();
-      } catch (e) {}
-      
-      const video = document.querySelector('#interactive video');
-      if (video && video.srcObject) {
-        video.srcObject.getTracks().forEach(track => track.stop());
-        video.srcObject = null;
-      }
-
-      const interactive = document.getElementById('interactive');
-      if (interactive) interactive.innerHTML = '';
-
-      isScannerRunning = false;
-      document.getElementById('reader-container').classList.add('hidden');
-    }
-
-    function toggleCameraScanner() {
-      const container = document.getElementById('reader-container');
-      
-      if (isScannerRunning) {
-        stopCameraStream();
-        return;
-      }
-
-      const interactive = document.getElementById('interactive');
-      if (interactive) interactive.innerHTML = '';
-      container.classList.remove('hidden');
-
-      Quagga.init({
-        inputStream: {
-          name: "Live",
-          type: "LiveStream",
-          target: document.querySelector('#interactive'),
-          constraints: {
-            facingMode: "environment",
-            width: { min: 640, ideal: 1280, max: 1920 },
-            height: { min: 480, ideal: 720, max: 1080 }
-          }
-        },
-        locator: {
-          patchSize: "medium",
-          halfSample: true
-        },
-        numOfWorkers: 2,
-        frequency: 10,
-        decoder: {
-          readers: [
-            "upc_reader",
-            "upc_e_reader",
-            "ean_reader",
-            "ean_8_reader",
-            "code_128_reader"
-          ]
-        },
-        locate: true
-      }, function(err) {
-        if (err) {
-          alert("Could not start camera. Check permissions and ensure HTTPS is used.");
-          stopCameraStream();
-          return;
-        }
-        Quagga.start();
-        isScannerRunning = true;
-      });
-
-      Quagga.offDetected();
-      Quagga.onDetected(function(result) {
-        if (result && result.codeResult && result.codeResult.code) {
-          const barcode = result.codeResult.code;
-          stopCameraStream();
-          
-          if (navigator.vibrate) navigator.vibrate(100);
-          document.getElementById('barcodeInput').value = barcode;
-          handleManualLookup();
-        }
-      });
-    }
-
-    // --- CUSTOM DROPDOWNS ---
-    function renderAssortmentDropdownOptions(filterText = '') {
-      const dropdown = document.getElementById('assortmentDropdown');
-      if (!dropdown) return;
-      
-      const filtered = assortments.filter(a => a.name.toLowerCase().includes(filterText.toLowerCase()));
-      
-      if (filtered.length === 0) {
-        dropdown.innerHTML = `<div class="px-3 py-2 text-xs text-slate-500 italic">No matching assortments found</div>`;
-        return;
-      }
-
-      dropdown.innerHTML = filtered.map(a => {
-        const safeName = a.name.replace(/'/g, "\\'");
-        return `<div class="px-3 py-2 text-sm cursor-pointer hover:bg-slate-700 text-slate-200 border-b border-slate-700/50 last:border-0" 
-                     onmousedown="event.preventDefault(); selectAssortment('${safeName}')">
-          ${a.name}
-        </div>`;
-      }).join('');
-    }
-
-    function showAssortmentDropdown() {
-      renderAssortmentDropdownOptions(document.getElementById('itemAssortment').value);
-      document.getElementById('assortmentDropdown').classList.remove('hidden');
-    }
-
-    function filterAssortmentDropdown() {
-      renderAssortmentDropdownOptions(document.getElementById('itemAssortment').value);
-    }
-
-    function hideAssortmentDropdown() {
-      setTimeout(() => {
-        const dd = document.getElementById('assortmentDropdown');
-        if (dd) dd.classList.add('hidden');
-      }, 250);
-    }
-
-    function selectAssortment(name) {
-      const input = document.getElementById('itemAssortment');
-      input.value = name;
-      document.getElementById('assortmentDropdown').classList.add('hidden');
-      input.blur();
-    }
-
-    function getUniqueStores() {
-      const stores = new Set();
-      items.forEach(i => {
-        if (i.store && i.store.trim() !== '') {
-          stores.add(i.store.trim());
-        }
-      });
-      return Array.from(stores).sort();
-    }
-
-    function renderStoreDropdownOptions(filterText = '') {
-      const dropdown = document.getElementById('storeDropdown');
-      if (!dropdown) return;
-      
-      const uniqueStores = getUniqueStores();
-      const filtered = uniqueStores.filter(s => s.toLowerCase().includes(filterText.toLowerCase()));
-      
-      if (filtered.length === 0) {
-        dropdown.innerHTML = `<div class="px-3 py-2 text-xs text-slate-500 italic">No matching stores found</div>`;
-        return;
-      }
-
-      dropdown.innerHTML = filtered.map(s => {
-        const safeName = s.replace(/'/g, "\\'");
-        return `<div class="px-3 py-2 text-sm cursor-pointer hover:bg-slate-700 text-slate-200 border-b border-slate-700/50 last:border-0" 
-                     onmousedown="event.preventDefault(); selectStore('${safeName}')">
-          ${s}
-        </div>`;
-      }).join('');
-    }
-
-    function showStoreDropdown() {
-      renderStoreDropdownOptions(document.getElementById('itemStore').value);
-      document.getElementById('storeDropdown').classList.remove('hidden');
-    }
-
-    function filterStoreDropdown() {
-      renderStoreDropdownOptions(document.getElementById('itemStore').value);
-    }
-
-    function hideStoreDropdown() {
-      setTimeout(() => {
-        const dd = document.getElementById('storeDropdown');
-        if (dd) dd.classList.add('hidden');
-      }, 250);
-    }
-
-    function selectStore(name) {
-      const input = document.getElementById('itemStore');
-      input.value = name;
-      document.getElementById('storeDropdown').classList.add('hidden');
-      input.blur();
-    }
-
-    // --- 7. ASSORTMENT & REORDER METRIC ENGINE ---
-    function isItemLowStock(item) {
-      if (item.mode === 'partial') {
-        const capacity = Number(item.fullCapacity) || 1;
-        const current = Number(item.currentUnits) || 0;
-        return ((current / capacity) * 100) <= (Number(item.reorderPct) || 0);
-      }
-      return (Number(item.currentCount) || 0) <= (Number(item.minCount) || 0);
-    }
-
-    // --- 8. INVENTORY RENDERING (SEARCH-ISOLATED METRICS) ---
-    function renderLists() {
-      const filter = document.getElementById('listFilter').value.trim().toLowerCase();
-      const inventoryList = document.getElementById('inventoryContainer');
-      const reorderList = document.getElementById('reorderContainer');
-      const storeBreakdown = document.getElementById('storePriceBreakdown');
-
-      let invHtml = '';
-      let reorderHtml = '';
-      let globalReorderCount = 0;
-      let globalStoreTotals = {};
-
-      const standaloneItems = [];
-      const groupedItems = {}; 
-
-      items.forEach(item => {
-        if (item.assortment && item.assortment.trim() !== '') {
-          const aName = item.assortment.trim().toLowerCase();
-          if (!groupedItems[aName]) {
-            const aConfig = assortments.find(a => a.name.trim().toLowerCase() === aName);
-            groupedItems[aName] = { 
-              name: aConfig ? aConfig.name : item.assortment.trim(),
-              threshold: aConfig ? Number(aConfig.threshold) || 0 : 0,
-              items: [] 
-            };
-          }
-          groupedItems[aName].items.push(item);
-        } else {
-          standaloneItems.push(item);
-        }
-      });
-
-      // 1. Calculate GLOBAL metrics
-      Object.values(groupedItems).forEach(group => {
-        const poolCount = group.items.reduce((sum, curr) => {
-          return sum + (curr.mode === 'partial' ? ((Number(curr.currentUnits) || 0) / (Number(curr.fullCapacity) || 1)) : (Number(curr.currentCount) || 0));
-        }, 0);
-
-        if (poolCount <= group.threshold) {
-          globalReorderCount++;
-          const pricedItems = group.items.filter(i => Number(i.price) > 0);
-          const candidate = pricedItems.length > 0 
-            ? pricedItems.reduce((prev, curr) => (Number(prev.price) < Number(curr.price)) ? prev : curr)
-            : group.items[0];
-
-          if (candidate) {
-            const storeName = candidate.store || 'Unassigned Store';
-            globalStoreTotals[storeName] = (globalStoreTotals[storeName] || 0) + (Number(candidate.price) || 0);
-          }
-        }
-      });
-
-      standaloneItems.forEach(item => {
-        if (isItemLowStock(item)) {
-          globalReorderCount++;
-          const storeName = item.store || 'Unassigned Store';
-          globalStoreTotals[storeName] = (globalStoreTotals[storeName] || 0) + (Number(item.price) || 0);
-        }
-      });
-
-      document.getElementById('reorderCountBadge').innerText = globalReorderCount;
-
-      let totalsHtml = '';
-      for (const [st, val] of Object.entries(globalStoreTotals)) {
-        totalsHtml += `<div class="flex justify-between py-0.5 border-b border-slate-700/50"><span>${st}:</span><span class="font-bold text-emerald-400">$${val.toFixed(2)}</span></div>`;
-      }
-      storeBreakdown.innerHTML = totalsHtml || '<p class="text-xs text-slate-500">No orders currently pending.</p>';
-
-      function createCard(item, isGrouped = false, groupNeedsReorder = false) {
-        const fallbackImg = "https://cdn-icons-png.flaticon.com/512/679/679821.png";
-        const thumb = item.image || fallbackImg;
-        const lastModDate = (item.lastModifiedAt && item.lastModifiedAt.toDate) 
-          ? item.lastModifiedAt.toDate().toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}) 
-          : 'recently';
-
-        const itemLow = isItemLowStock(item);
-        const showReorderBadge = !isGrouped ? itemLow : groupNeedsReorder;
-
-        return `
-          <div class="bg-slate-800 border ${showReorderBadge && !isGrouped ? 'border-amber-500/50' : 'border-slate-700'} rounded-lg p-3 flex flex-col gap-2 ${isGrouped ? 'mt-2' : ''}">
-            <div class="flex items-center justify-between gap-3">
-              <img src="${thumb}" class="w-12 h-12 rounded object-cover bg-slate-900 border border-slate-700" onerror="this.src='${fallbackImg}'" />
-              <div class="flex-1 min-w-0">
-                <div class="flex items-center gap-1.5">
-                  <span class="font-bold text-sm truncate">${item.name}</span>
-                  ${showReorderBadge && !isGrouped ? '<span class="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded font-medium">REORDER</span>' : ''}
-                </div>
-                <div class="text-xs text-slate-400 flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
-                  <span>Store: <strong class="text-slate-300">${item.store || 'None'}</strong></span>
-                  <span>Price: <strong class="text-slate-300">${item.price ? '$' + Number(item.price).toFixed(2) : 'N/A'}</strong></span>
-                </div>
-                <div class="text-xs mt-1 text-slate-300">
-                  ${item.mode === 'partial' 
-                    ? `Remaining: <strong>${item.currentUnits}</strong> / ${item.fullCapacity} (${Math.round(((Number(item.currentUnits)||0)/(Number(item.fullCapacity)||1))*100)}%)` 
-                    : `In Stock: <strong>${item.currentCount || 0}</strong>${!isGrouped ? ` (Min: ${item.minCount || 0})` : ''}`}
-                </div>
-              </div>
-              <div class="flex flex-col items-end gap-1.5">
-                <div class="flex items-center gap-1">
-                  <button onclick="adjustCount('${item.id}', -1)" class="w-7 h-7 bg-slate-700 hover:bg-slate-600 rounded flex items-center justify-center font-bold text-sm">-</button>
-                  <button onclick="adjustCount('${item.id}', 1)" class="w-7 h-7 bg-slate-700 hover:bg-slate-600 rounded flex items-center justify-center font-bold text-sm">+</button>
-                </div>
-                <button onclick="openEditItemModal('${item.id}')" class="text-[11px] text-slate-400 hover:text-amber-400 mt-1">Edit Item</button>
-              </div>
-            </div>
-            <div class="mt-1 pt-2 border-t border-slate-700/50 flex justify-between items-center text-[10px] text-slate-500">
-              <span>${item.lastModifiedBy ? `Updated by <strong class="text-slate-300">${item.lastModifiedBy}</strong> on ${lastModDate}` : 'Added to inventory'}</span>
-              <button onclick="showHistory('${item.id}')" class="text-blue-400 hover:text-blue-300 font-medium">History</button>
-            </div>
-          </div>
-        `;
-      }
-
-      // 2. Render groups
-      Object.values(groupedItems).forEach(group => {
-        let total = group.items.reduce((sum, curr) => sum + (curr.mode === 'partial' ? ((Number(curr.currentUnits)||0)/(Number(curr.fullCapacity)||1)) : (Number(curr.currentCount)||0)), 0);
-        total = Math.round(total * 100) / 100;
-        let needsReorder = total <= group.threshold;
-
-        let matchesFilter = !filter || group.name.toLowerCase().includes(filter) || group.items.some(i => i.name.toLowerCase().includes(filter) || (i.store && i.store.toLowerCase().includes(filter)));
-
-        if (matchesFilter) {
-          let visibleItems = filter 
-            ? group.items.filter(i => group.name.toLowerCase().includes(filter) || i.name.toLowerCase().includes(filter) || (i.store && i.store.toLowerCase().includes(filter)))
-            : group.items;
-
-          let groupHeader = `
-            <div class="bg-slate-800 border ${needsReorder ? 'border-amber-500/50' : 'border-blue-500/30'} rounded-lg p-3 flex flex-col gap-2 mb-2">
-              <div class="flex justify-between items-center pb-2">
-                <div>
-                  <span class="font-bold text-sm text-blue-400">📦 Assortment: ${group.name}</span>
-                  <div class="text-xs text-slate-400">Total in Pool: <strong class="${needsReorder ? 'text-amber-400' : 'text-emerald-400'}">${total}</strong> (Alert at: ${group.threshold})</div>
-                </div>
-                ${needsReorder ? '<span class="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded font-medium">REORDER</span>' : ''}
-              </div>
-              <div class="space-y-2 border-l-2 border-slate-700/50 pl-2 ml-1">
-          `;
-          
-          let groupContent = visibleItems.map(i => createCard(i, true, needsReorder)).join('');
-          let groupFooter = `</div></div>`;
-          
-          let fullGroupHtml = groupHeader + groupContent + groupFooter;
-          invHtml += fullGroupHtml;
-          
-          if (needsReorder) {
-            reorderHtml += fullGroupHtml;
-          }
-        }
-      });
-
-      // 3. Render standalone items
-      standaloneItems.forEach(item => {
-        const matchesFilter = !filter || item.name.toLowerCase().includes(filter) || (item.store && item.store.toLowerCase().includes(filter));
-        if (matchesFilter) {
-          const itemLow = isItemLowStock(item);
-          const card = createCard(item, false);
-          invHtml += card;
-          if (itemLow) {
-            reorderHtml += card;
-          }
-        }
-      });
-
-      inventoryList.innerHTML = invHtml || '<p class="text-slate-500 text-center py-6">No matching items in pantry.</p>';
-      reorderList.innerHTML = reorderHtml || '<p class="text-emerald-400 text-center py-6">All items stocked above minimum thresholds!</p>';
-    }
-
-    function renderAssortments() {
-      const container = document.getElementById('assortmentContainer');
-      container.innerHTML = assortments.map(a => {
-        const matches = items.filter(i => i.assortment && i.assortment.trim().toLowerCase() === a.name.trim().toLowerCase());
-        let total = matches.reduce((sum, curr) => sum + (curr.mode === 'partial' ? ((Number(curr.currentUnits)||0) / (Number(curr.fullCapacity)||1)) : (Number(curr.currentCount)||0)), 0);
-        total = Math.round(total * 100) / 100; 
-        const low = total <= (Number(a.threshold) || 0);
-        
-        const itemListHtml = matches.map(m => `
-          <div class="flex justify-between items-center text-xs py-1 border-b border-slate-700/30 last:border-0">
-            <span class="text-slate-300 truncate pr-2">${m.name}</span>
-            <span class="text-slate-400 font-mono shrink-0">${m.mode === 'partial' ? m.currentUnits : m.currentCount} qty</span>
-          </div>
-        `).join('');
-
-        return `
-          <div class="bg-slate-800 rounded-lg border ${low ? 'border-rose-500/50' : 'border-slate-700'} overflow-hidden mb-2">
-            <div class="p-3 flex justify-between items-center cursor-pointer hover:bg-slate-700/50 transition" onclick="document.getElementById('assort_items_${a.id}').classList.toggle('hidden')">
-              <div>
-                <p class="font-bold text-sm">${a.name} <span class="text-xs text-slate-500 ml-1">▼</span></p>
-                <p class="text-xs text-slate-400">Pool count: <strong class="${low ? 'text-rose-400' : 'text-emerald-400'}">${total}</strong> (Alert threshold: ${a.threshold})</p>
-              </div>
-              <button onclick="deleteAssortment(event, '${a.id}')" class="text-slate-500 hover:text-rose-400 text-xs px-2 py-1">&times; Remove</button>
-            </div>
-            <div id="assort_items_${a.id}" class="hidden bg-slate-900/50 px-3 py-2 border-t border-slate-700">
-              ${itemListHtml || '<p class="text-xs text-slate-500 italic">No items assigned to this assortment yet.</p>'}
-            </div>
-          </div>
-        `;
-      }).join('');
-    }
-
-    // --- 9. MODALS & DATA SAVING ---
-    function switchTab(t) {
-      ['inventory', 'reorder', 'assortments'].forEach(tab => {
-        document.getElementById(`view-${tab}`).classList.add('hidden');
-        document.getElementById(`tab-${tab}`).classList.replace('text-emerald-400', 'text-slate-400');
-        document.getElementById(`tab-${tab}`).classList.replace('border-emerald-500', 'border-transparent');
-      });
-      document.getElementById(`view-${t}`).classList.remove('hidden');
-      document.getElementById(`tab-${t}`).classList.replace('text-slate-400', 'text-emerald-400');
-      document.getElementById(`tab-${t}`).classList.replace('border-transparent', 'border-emerald-500');
-    }
-
-    function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
-    function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
-    
-    function openProfileModal() { 
-      renderProfiles(); 
-      openModal('profileModal'); 
-    }
-
-    function toggleModeFields() {
-      const m = document.getElementById('itemMode').value;
-      if (m === 'partial') {
-        document.getElementById('countFields').classList.add('hidden');
-        document.getElementById('partialFields').classList.remove('hidden');
-      } else {
-        document.getElementById('countFields').classList.remove('hidden');
-        document.getElementById('partialFields').classList.add('hidden');
-      }
-    }
-
-    function openAddItemModal(prefill = {}) {
-      if (!checkUser()) return;
-      document.getElementById('itemModalTitle').innerText = "Add New Item";
-      document.getElementById('itemId').value = '';
-      document.getElementById('itemBarcode').value = prefill.barcode || '';
-      document.getElementById('itemName').value = prefill.name || '';
-      document.getElementById('itemImage').value = prefill.image || '';
-      document.getElementById('itemStore').value = '';
-      document.getElementById('itemAssortment').value = '';
-      document.getElementById('itemPrice').value = '';
-      document.getElementById('itemBallparkPrice').value = prefill.ballparkPrice || '';
-      document.getElementById('itemMode').value = 'count';
-      document.getElementById('itemCurrentCount').value = 1;
-      document.getElementById('itemMinCount').value = 1;
-      document.getElementById('itemFullCapacity').value = 10;
-      document.getElementById('itemCurrentUnits').value = 10;
-      document.getElementById('itemReorderPct').value = 30;
-      toggleModeFields();
-      
-      document.getElementById('deleteItemBtn').classList.add('hidden');
-      openModal('itemModal');
-    }
-
-    function openEditItemModal(id) {
-      if (!checkUser()) return;
-      const i = items.find(x => x.id === id);
-      if (!i) return;
-      document.getElementById('itemModalTitle').innerText = "Edit Item";
-      document.getElementById('itemId').value = i.id;
-      document.getElementById('itemBarcode').value = i.barcode || '';
-      document.getElementById('itemName').value = i.name || '';
-      document.getElementById('itemImage').value = i.image || '';
-      document.getElementById('itemStore').value = i.store || '';
-      document.getElementById('itemAssortment').value = i.assortment || '';
-      document.getElementById('itemPrice').value = i.price || '';
-      document.getElementById('itemBallparkPrice').value = i.ballparkPrice || '';
-      document.getElementById('itemMode').value = i.mode || 'count';
-      document.getElementById('itemCurrentCount').value = i.currentCount || 0;
-      document.getElementById('itemMinCount').value = i.minCount || 0;
-      document.getElementById('itemFullCapacity').value = i.fullCapacity || 10;
-      document.getElementById('itemCurrentUnits').value = i.currentUnits || 0;
-      document.getElementById('itemReorderPct').value = i.reorderPct || 30;
-      toggleModeFields();
-      
-      if (isUserAdmin()) {
-        document.getElementById('deleteItemBtn').classList.remove('hidden');
-      } else {
-        document.getElementById('deleteItemBtn').classList.add('hidden');
-      }
-
-      openModal('itemModal');
-    }
-
-    async function saveItem() {
-      const id = document.getElementById('itemId').value;
-      const docData = {
-        barcode: document.getElementById('itemBarcode').value.trim(),
-        name: document.getElementById('itemName').value.trim(),
-        image: document.getElementById('itemImage').value.trim(),
-        store: document.getElementById('itemStore').value.trim(),
-        assortment: document.getElementById('itemAssortment').value.trim(),
-        price: parseFloat(document.getElementById('itemPrice').value) || 0,
-        ballparkPrice: parseFloat(document.getElementById('itemBallparkPrice').value) || 0,
-        mode: document.getElementById('itemMode').value,
-        currentCount: parseInt(document.getElementById('itemCurrentCount').value) || 0,
-        minCount: parseInt(document.getElementById('itemMinCount').value) || 0,
-        fullCapacity: parseFloat(document.getElementById('itemFullCapacity').value) || 1,
-        currentUnits: parseFloat(document.getElementById('itemCurrentUnits').value) || 0,
-        reorderPct: parseInt(document.getElementById('itemReorderPct').value) || 0,
-        lastModifiedBy: currentUser,
-        lastModifiedAt: firebase.firestore.FieldValue.serverTimestamp()
-      };
-
-      if (!docData.name) return alert('Item name required');
-
-      if (id) {
-        await db.collection('items').doc(id).update(docData);
-        logAction(id, docData.name, 'Edited item details');
-      } else {
-        const ref = await db.collection('items').add(docData);
-        logAction(ref.id, docData.name, 'Added item to stock');
-      }
-      closeModal('itemModal');
-    }
-
-    function openCreateAssortmentModal() { openModal('assortmentModal'); }
-    async function saveAssortment() {
-      const name = document.getElementById('assortmentName').value.trim();
-      const threshold = parseInt(document.getElementById('assortmentThreshold').value) || 1;
-      if (!name) return;
-      await db.collection('assortments').add({ name, threshold });
-      document.getElementById('assortmentName').value = '';
-      document.getElementById('assortmentThreshold').value = '';
-      closeModal('assortmentModal');
-    }
-
-    async function deleteAssortment(event, id) {
-      event.stopPropagation();
-      if (confirm('Delete this assortment?')) {
-        await db.collection('assortments').doc(id).delete();
-      }
-    }
-  </script>
+  <!-- TOP APP BAR -->
+  <header class="bg-slate-800 border-b border-slate-700 px-4 py-3 sticky top-0 z-30 flex justify-between items-center shadow-md">
+    <div class="flex items-center gap-2">
+      <span class="text-2xl">🛒</span>
+      <h1 class="text-lg font-bold tracking-tight">Family Pantry</h1>
+    </div>
+    <div class="flex items-center gap-2">
+      <button onclick="openMyProfile()" id="currentUserDisplay" title="Edit Profile" class="text-xs bg-slate-700 hover:bg-slate-600 px-2.5 py-1 rounded-full border border-slate-600 font-medium text-emerald-400 transition cursor-pointer">Not logged in</button>
+      <button onclick="openProfileModal()" class="text-xs bg-blue-600 hover:bg-blue-500 text-white px-2.5 py-1 rounded transition">Switch User</button>
+    </div>
+  </header>
+
+  <!-- NAVIGATION TABS -->
+  <nav class="flex border-b border-slate-700 bg-slate-800/80 backdrop-blur sticky top-[53px] z-20">
+    <button onclick="switchTab('inventory')" id="tab-inventory" class="flex-1 py-3 text-center text-sm font-semibold border-b-2 border-emerald-500 text-emerald-400">Inventory</button>
+    <button onclick="switchTab('reorder')" id="tab-reorder" class="flex-1 py-3 text-center text-sm font-semibold border-b-2 border-transparent text-slate-400">Needs Reorder (<span id="reorderCountBadge">0</span>)</button>
+    <button onclick="switchTab('assortments')" id="tab-assortments" class="flex-1 py-3 text-center text-sm font-semibold border-b-2 border-transparent text-slate-400">Assortments</button>
+  </nav>
+
+  <main class="max-w-3xl mx-auto p-4 space-y-4">
+
+    <!-- SCANNER & QUICK ADD ACTION BAR -->
+    <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm space-y-3">
+      <div class="flex gap-2">
+        <input id="barcodeInput" type="text" placeholder="Scan barcode or type item/SKU..." 
+               class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+               onkeydown="if(event.key==='Enter') handleManualLookup()" />
+        <button id="searchBtn" onclick="handleManualLookup()" class="bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded-lg text-sm font-medium">Search</button>
+        <button onclick="toggleCameraScanner()" class="bg-emerald-600 hover:bg-emerald-500 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-1">
+          📷 <span class="hidden sm:inline">Camera</span>
+        </button>
+      </div>
+
+      <!-- CAMERA SCANNER CONTAINER -->
+      <div id="reader-container" class="hidden flex flex-col items-center p-3 bg-slate-900 rounded-lg border border-slate-700">
+        <div id="interactive" class="viewport w-full max-w-sm"></div>
+        <p class="text-xs text-slate-400 mt-2">Align the barcode horizontally inside the box</p>
+        <button onclick="toggleCameraScanner()" class="mt-2 text-xs text-rose-400 hover:underline">Close Camera</button>
+      </div>
+    </div>
+
+    <!-- TAB: INVENTORY VIEW -->
+    <section id="view-inventory" class="space-y-3">
+      <div class="flex justify-between items-center px-1">
+        <input id="listFilter" oninput="renderLists()" placeholder="Filter items by name or store..." 
+               class="bg-slate-800 border border-slate-700 text-xs rounded-md px-3 py-1.5 w-64 focus:outline-none focus:border-blue-500" />
+        <button onclick="openAddItemModal()" class="text-xs bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded font-medium">+ Add New</button>
+      </div>
+      <div id="inventoryContainer" class="space-y-2"></div>
+    </section>
+
+    <!-- TAB: REORDER & SHOPPING LIST -->
+    <section id="view-reorder" class="hidden space-y-4">
+      <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
+        <h2 class="text-sm font-semibold uppercase text-slate-400 tracking-wider mb-2">Estimated Shopping List Total</h2>
+        <div id="storePriceBreakdown" class="space-y-1 text-sm"></div>
+      </div>
+      <div id="reorderContainer" class="space-y-2"></div>
+    </section>
+
+    <!-- TAB: ASSORTMENTS VIEW -->
+    <section id="view-assortments" class="hidden space-y-3">
+      <div class="flex justify-between items-center px-1">
+        <p class="text-xs text-slate-400">Pool interchangeable items (e.g. Cereal, Sodas) to alert only when the group drops below threshold.</p>
+        <button onclick="openCreateAssortmentModal()" class="text-xs bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded font-medium whitespace-nowrap">+ Assortment</button>
+      </div>
+      <div id="assortmentContainer" class="space-y-2"></div>
+    </section>
+  </main>
+
+  <!-- MODAL: ADD / EDIT ITEM -->
+  <div id="itemModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-slate-800 border border-slate-700 rounded-xl p-5 max-w-md w-full space-y-3 max-h-[90vh] overflow-y-auto">
+      <div class="flex justify-between items-center border-b border-slate-700 pb-2">
+        <h3 id="itemModalTitle" class="font-bold text-base">Item Details</h3>
+        <button onclick="closeModal('itemModal')" class="text-slate-400 hover:text-white">&times;</button>
+      </div>
+      <input type="hidden" id="itemId" />
+      <div class="space-y-2 text-sm">
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Barcode / SKU</label>
+          <input id="itemBarcode" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5" />
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Product Name</label>
+          <input id="itemName" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5" required />
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Image URL</label>
+          <input id="itemImage" placeholder="https://..." class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5" />
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Store Name</label>
+            <div class="relative">
+              <input id="itemStore" type="text" autocomplete="off" placeholder="Walmart, Kroger, etc." 
+                     class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 focus:outline-none focus:border-blue-500" 
+                     onfocus="showStoreDropdown()" oninput="filterStoreDropdown()" onblur="hideStoreDropdown()" />
+              <div id="storeDropdown" class="hidden absolute z-50 w-full mt-1 bg-slate-800 border border-slate-600 rounded shadow-xl max-h-40 overflow-y-auto"></div>
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Assortment / Group</label>
+            <div class="relative">
+              <input id="itemAssortment" type="text" autocomplete="off" placeholder="Search or select..." 
+                     class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 focus:outline-none focus:border-blue-500" 
+                     onfocus="showAssortmentDropdown()" oninput="filterAssortmentDropdown()" onblur="hideAssortmentDropdown()" />
+              <div id="assortmentDropdown" class="hidden absolute z-50 w-full mt-1 bg-slate-800 border border-slate-600 rounded shadow-xl max-h-40 overflow-y-auto"></div>
+            </div>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Your Price ($)</label>
+            <input id="itemPrice" type="number" step="0.01" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5" />
+          </div>
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Ballpark Price ($)</label>
+            <input id="itemBallparkPrice" type="number" step="0.01" disabled class="w-full bg-slate-900 border border-slate-700 text-slate-500 rounded px-2.5 py-1.5" />
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Tracking Mode</label>
+          <select id="itemMode" onchange="toggleModeFields()" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5">
+            <option value="count">Count Mode (Discrete packages/cans)</option>
+            <option value="partial">Percentage / Partial Use (e.g. toilet paper, chicken)</option>
+          </select>
+        </div>
+        <div id="countFields" class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Current Units</label>
+            <input id="itemCurrentCount" type="number" step="1" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5" />
+          </div>
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Reorder Threshold</label>
+            <input id="itemMinCount" type="number" step="1" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5" />
+          </div>
+        </div>
+        <div id="partialFields" class="hidden grid grid-cols-3 gap-2">
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Full Pack Capacity</label>
+            <input id="itemFullCapacity" type="number" step="0.1" placeholder="e.g. 12" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5" />
+          </div>
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Current Units Left</label>
+            <input id="itemCurrentUnits" type="number" step="0.1" placeholder="e.g. 4" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5" />
+          </div>
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Reorder At %</label>
+            <input id="itemReorderPct" type="number" step="1" placeholder="e.g. 30" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5" />
+          </div>
+        </div>
+      </div>
+      <div class="flex justify-between items-center pt-3 border-t border-slate-700">
+        <button id="deleteItemBtn" onclick="deleteItem()" class="hidden px-3 py-1.5 rounded bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition">Delete Item</button>
+        <div class="flex gap-2 ml-auto">
+          <button onclick="closeModal('itemModal')" class="px-3 py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-xs">Cancel</button>
+          <button onclick="saveItem()" class="px-4 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 font-semibold text-xs">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: MY PROFILE SETTINGS -->
+  <div id="myProfileModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-slate-800 border border-slate-700 rounded-xl p-5 max-w-sm w-full space-y-4">
+      <div class="flex justify-between items-center border-b border-slate-700 pb-2">
+        <h3 class="font-bold text-base">Profile Settings: <span id="myProfileNameUI" class="text-emerald-400"></span></h3>
+        <button onclick="closeModal('myProfileModal')" class="text-slate-400 hover:text-white">&times;</button>
+      </div>
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Verify Current PIN</label>
+          <input id="myProfileOldPin" type="password" maxlength="4" placeholder="Current PIN" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-sm" />
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">New PIN (Optional)</label>
+          <input id="myProfileNewPin" type="password" maxlength="4" placeholder="New 4-Digit PIN" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-sm" />
+        </div>
+        <label class="flex items-center gap-2 cursor-pointer pt-2 border-t border-slate-700">
+          <input type="checkbox" id="myProfileAdmin" class="w-4 h-4 rounded bg-slate-900 border-slate-700" />
+          <span class="text-xs text-slate-300">Administrator (Can delete items)</span>
+        </label>
+      </div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button onclick="closeModal('myProfileModal')" class="px-3 py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-xs">Cancel</button>
+        <button onclick="saveMyProfile()" class="px-4 py-1.5 rounded bg-blue-600 hover:bg-blue-500 font-semibold text-xs">Save Profile</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: ADMIN EDIT OTHER USER SETTINGS -->
+  <div id="adminEditUserModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-slate-800 border border-slate-700 rounded-xl p-5 max-w-sm w-full space-y-4">
+      <div class="flex justify-between items-center border-b border-slate-700 pb-2">
+        <h3 class="font-bold text-base">Edit User: <span id="adminEditUserNameUI" class="text-emerald-400"></span></h3>
+        <button onclick="closeModal('adminEditUserModal')" class="text-slate-400 hover:text-white">&times;</button>
+      </div>
+      <input type="hidden" id="adminEditUserId" />
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">User PIN</label>
+          <input id="adminEditUserPin" type="text" maxlength="4" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-sm tracking-widest font-mono" />
+        </div>
+        <label class="flex items-center gap-2 cursor-pointer pt-2 border-t border-slate-700">
+          <input type="checkbox" id="adminEditUserAdmin" class="w-4 h-4 rounded bg-slate-900 border-slate-700" />
+          <span class="text-xs text-slate-300">Administrator (Can delete items)</span>
+        </label>
+      </div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button onclick="closeModal('adminEditUserModal')" class="px-3 py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-xs">Cancel</button>
+        <button onclick="saveAdminEditUser()" class="px-4 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 font-semibold text-xs">Save Changes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: USER PROFILES & PIN -->
+  <div id="profileModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-slate-800 border border-slate-700 rounded-xl p-5 max-w-sm w-full flex flex-col max-h-[85vh]">
+      <h3 class="font-bold text-base border-b border-slate-700 pb-3 mb-3 shrink-0">Select or Add Profile</h3>
+      <div id="profileList" class="space-y-2 overflow-y-auto pr-1" style="max-height: 250px; -webkit-overflow-scrolling: touch;"></div>
+      
+      <div class="border-t border-slate-700 pt-3 space-y-2 shrink-0">
+        <p class="text-xs text-slate-400 font-semibold">Create New Profile</p>
+        <input id="newProfileName" placeholder="Name" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs" />
+        <input id="newProfilePin" type="password" maxlength="4" placeholder="4-Digit PIN" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs" />
+        <label class="flex items-center gap-2 cursor-pointer pb-1 pt-1">
+          <input type="checkbox" id="newProfileAdmin" class="w-4 h-4 rounded bg-slate-900 border-slate-700" />
+          <span class="text-xs text-slate-400">Make Administrator</span>
+        </label>
+        <button onclick="createProfile()" class="w-full bg-blue-600 hover:bg-blue-500 py-1.5 rounded text-xs font-semibold">Create Profile</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: PIN VERIFICATION -->
+  <div id="pinModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-slate-800 border border-slate-700 rounded-xl p-5 max-w-xs w-full space-y-3 text-center">
+      <h3 class="font-bold text-sm">Enter PIN for <span id="pinTargetUser"></span></h3>
+      <input id="pinEntry" type="password" maxlength="4" class="w-24 text-center tracking-widest text-lg bg-slate-900 border border-slate-700 rounded py-1.5 mx-auto" />
+      <div class="flex justify-center gap-2 pt-2">
+        <button onclick="closeModal('pinModal')" class="px-3 py-1 bg-slate-700 rounded text-xs">Cancel</button>
+        <button onclick="verifyPin()" class="px-3 py-1 bg-emerald-600 rounded text-xs font-semibold">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: AUDIT HISTORY -->
+  <div id="historyModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-slate-800 border border-slate-700 rounded-xl p-5 max-w-md w-full space-y-3">
+      <div class="flex justify-between items-center border-b border-slate-700 pb-2">
+        <h3 class="font-bold text-sm">Modification History</h3>
+        <button onclick="closeModal('historyModal')" class="text-slate-400 hover:text-white">&times;</button>
+      </div>
+      <div id="historyList" class="space-y-2 text-xs max-h-60 overflow-y-auto pr-2"></div>
+    </div>
+  </div>
+
+  <!-- MODAL: CREATE ASSORTMENT -->
+  <div id="assortmentModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-slate-800 border border-slate-700 rounded-xl p-5 max-w-xs w-full space-y-3">
+      <div class="flex justify-between items-center border-b border-slate-700 pb-2">
+        <h3 class="font-bold text-sm">Manage Assortment</h3>
+        <button onclick="closeModal('assortmentModal')" class="text-slate-400 hover:text-white">&times;</button>
+      </div>
+      <input id="assortmentName" placeholder="Group Name (e.g. Cereal)" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs" />
+      <input id="assortmentThreshold" type="number" placeholder="Total Min Count" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs" />
+      <button onclick="saveAssortment()" class="w-full bg-emerald-600 hover:bg-emerald-500 py-1.5 rounded text-xs font-semibold">Save</button>
+    </div>
+  </div>
+
+  <script>
+    // --- 1. FIREBASE SETUP & PERSISTENCE ---
+    const firebaseConfig = {
+      apiKey: "AIzaSyDifh3hjDZ5_ElC2jSBGwnaTkZChsuri-I",
+      authDomain: "grocery-inventory-pro.firebaseapp.com",
+      projectId: "grocery-inventory-pro"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    db.enablePersistence({ synchronizeTabs: true }).catch(err => {
+      console.warn("Firestore offline persistence unavailable:", err.code);
+    });
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').catch(console.error);
+    }
+
+    let currentUser = localStorage.getItem('pantry_user') || null;
+    let items = [];
+    let assortments = [];
+    let profiles = [];
+    let selectedProfileToVerify = null;
+    let isScannerRunning = false;
+
+    // --- 2. AUTH, PROFILES & ADMIN ---
+    function updateCurrentUserUI() {
+      const el = document.getElementById('currentUserDisplay');
+      el.innerText = currentUser ? currentUser : 'Select User';
+    }
+    updateCurrentUserUI();
+
+    db.collection('profiles').onSnapshot(snap => {
+      profiles = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      if (document.getElementById('profileModal').classList.contains('hidden') === false || !currentUser) {
+        renderProfiles();
+      }
+      if (!currentUser && profiles.length > 0) openProfileModal();
+    });
+
+    function isUserAdmin() {
+      if (currentUser === 'Daniel Rock') return true;
+      const profile = profiles.find(p => p.name === currentUser);
+      return profile ? !!profile.isAdmin : false;
+    }
+
+    function renderProfiles() {
+      const list = document.getElementById('profileList');
+      const adminMode = isUserAdmin();
+      
+      list.innerHTML = profiles.map(p => {
+        const safeName = p.name.replace(/'/g, "\\'");
+        const isOwner = p.name === 'Daniel Rock';
+        
+        let actionsHtml = '';
+        if (adminMode) {
+          actionsHtml += `<button onclick="openAdminEditUser(event, '${p.id}', '${safeName}', '${p.pin}', ${!!p.isAdmin})" class="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-[11px] text-blue-400 hover:text-blue-300 font-semibold shadow-sm transition">Edit</button>`;
+          if (!isOwner) {
+            actionsHtml += `<button onclick="deleteProfile(event, '${p.id}', '${safeName}')" class="bg-rose-900/40 border border-rose-800/80 rounded px-2 py-1 text-[11px] text-rose-400 hover:text-rose-300 font-bold shadow-sm transition">&times;</button>`;
+          }
+        } else {
+          actionsHtml = `<span class="text-[11px] text-slate-500">Tap to login</span>`;
+        }
+
+        return `
+        <div class="flex justify-between items-center p-2.5 bg-slate-900 rounded border border-slate-700 hover:border-blue-500 cursor-pointer mb-1.5" style="flex-shrink: 0;" onclick="requestPin('${safeName}')">
+          <div class="flex items-center gap-1.5 min-w-0 pr-2">
+            <span class="text-sm font-semibold truncate">${p.name}</span>
+            ${p.isAdmin ? '<span class="text-[9px] bg-blue-500/20 text-blue-300 px-1 py-0.5 rounded font-medium shrink-0 uppercase tracking-wider">Admin</span>' : ''}
+          </div>
+          <div class="flex items-center gap-1.5 shrink-0">
+            ${actionsHtml}
+          </div>
+        </div>
+        `;
+      }).join('');
+    }
+
+    function createProfile() {
+      const name = document.getElementById('newProfileName').value.trim();
+      const pin = document.getElementById('newProfilePin').value.trim();
+      const isAdmin = document.getElementById('newProfileAdmin').checked;
+      if (!name || pin.length !== 4) return alert('Enter a valid name and 4-digit PIN');
+      db.collection('profiles').add({ name, pin, isAdmin });
+      document.getElementById('newProfileName').value = '';
+      document.getElementById('newProfilePin').value = '';
+      document.getElementById('newProfileAdmin').checked = false;
+    }
+
+    async function deleteProfile(event, id, name) {
+      event.stopPropagation();
+      if (name === 'Daniel Rock') return alert("Cannot delete the primary owner account.");
+      
+      if (confirm(`Are you sure you want to permanently delete the profile for ${name}?`)) {
+        await db.collection('profiles').doc(id).delete();
+        if (currentUser === name) {
+          currentUser = null;
+          localStorage.removeItem('pantry_user');
+          updateCurrentUserUI();
+        }
+        renderProfiles();
+      }
+    }
+
+    function openAdminEditUser(event, id, name, pin, isAdmin) {
+      event.stopPropagation();
+      document.getElementById('adminEditUserId').value = id;
+      document.getElementById('adminEditUserNameUI').innerText = name;
+      document.getElementById('adminEditUserPin').value = pin;
+      
+      const adminCheckbox = document.getElementById('adminEditUserAdmin');
+      adminCheckbox.checked = isAdmin;
+      
+      if (name === 'Daniel Rock') {
+        adminCheckbox.disabled = true;
+        adminCheckbox.checked = true;
+      } else {
+        adminCheckbox.disabled = false;
+      }
+      
+      openModal('adminEditUserModal');
+    }
+
+    async function saveAdminEditUser() {
+      const id = document.getElementById('adminEditUserId').value;
+      const pin = document.getElementById('adminEditUserPin').value.trim();
+      const isAdmin = document.getElementById('adminEditUserAdmin').checked;
+      
+      if (pin.length !== 4) return alert("PIN must be exactly 4 digits.");
+      
+      await db.collection('profiles').doc(id).update({
+        pin: pin,
+        isAdmin: isAdmin
+      });
+      
+      closeModal('adminEditUserModal');
+      renderProfiles();
+    }
+
+    function requestPin(userName) {
+      selectedProfileToVerify = profiles.find(p => p.name === userName);
+      document.getElementById('pinTargetUser').innerText = userName;
+      document.getElementById('pinEntry').value = '';
+      closeModal('profileModal');
+      openModal('pinModal');
+    }
+
+    function verifyPin() {
+      const entered = document.getElementById('pinEntry').value;
+      if (selectedProfileToVerify && entered === selectedProfileToVerify.pin) {
+        currentUser = selectedProfileToVerify.name;
+        localStorage.setItem('pantry_user', currentUser);
+        updateCurrentUserUI();
+        closeModal('pinModal');
+      } else {
+        alert('Incorrect PIN');
+      }
+    }
+
+    function checkUser() {
+      if (!currentUser) {
+        renderProfiles();
+        openProfileModal();
+        return false;
+      }
+      return true;
+    }
+
+    function openMyProfile() {
+      if (!currentUser) return;
+      const profile = profiles.find(p => p.name === currentUser);
+      if (!profile) return;
+      
+      document.getElementById('myProfileNameUI').innerText = profile.name;
+      document.getElementById('myProfileOldPin').value = '';
+      document.getElementById('myProfileNewPin').value = '';
+      document.getElementById('myProfileAdmin').checked = profile.isAdmin || currentUser === 'Daniel Rock';
+      
+      openModal('myProfileModal');
+    }
+
+    async function saveMyProfile() {
+      const profile = profiles.find(p => p.name === currentUser);
+      if (!profile) return;
+      
+      const oldPin = document.getElementById('myProfileOldPin').value;
+      const newPin = document.getElementById('myProfileNewPin').value;
+      const isAdmin = document.getElementById('myProfileAdmin').checked;
+      
+      if (oldPin !== profile.pin) {
+        return alert("Current PIN is incorrect. You must verify your current PIN to make changes.");
+      }
+      
+      let updatedPin = profile.pin;
+      if (newPin) {
+        if (newPin.length !== 4) return alert("New PIN must be exactly 4 digits.");
+        updatedPin = newPin;
+      }
+      
+      await db.collection('profiles').doc(profile.id).update({
+        pin: updatedPin,
+        isAdmin: isAdmin
+      });
+      
+      closeModal('myProfileModal');
+      alert("Profile updated successfully!");
+    }
+
+    // --- 3. FIRESTORE REAL-TIME SYNC ---
+    db.collection('items').onSnapshot(snap => {
+      items = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      renderLists();
+    });
+
+    db.collection('assortments').onSnapshot(snap => {
+      assortments = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      renderAssortments();
+    });
+
+    // --- 4. ITEM MODIFICATIONS & AUDIT TRAIL ---
+    async function logAction(itemId, itemName, actionText) {
+      if (!currentUser) return;
+      await db.collection('audit_logs').add({
+        itemId,
+        itemName,
+        user: currentUser,
+        action: actionText,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    }
+
+    async function adjustCount(id, delta) {
+      if (!checkUser()) return;
+      const item = items.find(i => i.id === id);
+      if (!item) return;
+
+      if (item.mode === 'partial') {
+        const cur = Number(item.currentUnits) || 0;
+        let newUnits = Math.max(0, +(cur + delta).toFixed(1));
+        await db.collection('items').doc(id).update({ 
+          currentUnits: newUnits,
+          lastModifiedBy: currentUser,
+          lastModifiedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        logAction(id, item.name, `Adjusted remaining units to ${newUnits}`);
+      } else {
+        const cur = Number(item.currentCount) || 0;
+        let newCount = Math.max(0, cur + delta);
+        await db.collection('items').doc(id).update({ 
+          currentCount: newCount,
+          lastModifiedBy: currentUser,
+          lastModifiedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        logAction(id, item.name, `${delta > 0 ? 'Scanned IN' : 'Scanned OUT'} (Total: ${newCount})`);
+      }
+    }
+
+    async function showHistory(id) {
+      openModal('historyModal');
+      const container = document.getElementById('historyList');
+      container.innerHTML = '<p class="text-slate-400">Loading history...</p>';
+      
+      try {
+        const snap = await db.collection('audit_logs')
+          .where('itemId', '==', id)
+          .get();
+
+        if (snap.empty) {
+          container.innerHTML = '<p class="text-slate-400">No modifications logged yet.</p>';
+          return;
+        }
+
+        let logs = snap.docs.map(d => d.data());
+        logs.sort((a, b) => {
+          const tA = a.timestamp ? a.timestamp.toMillis() : 0;
+          const tB = b.timestamp ? b.timestamp.toMillis() : 0;
+          return tB - tA;
+        });
+
+        logs = logs.slice(0, 20);
+
+        container.innerHTML = logs.map(l => {
+          const date = l.timestamp ? l.timestamp.toDate().toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}) : 'Just now';
+          return `
+            <div class="border-b border-slate-700/60 pb-1.5">
+              <span class="text-emerald-400 font-semibold">${l.user}</span>: ${l.action}
+              <div class="text-[10px] text-slate-500">${date}</div>
+            </div>
+          `;
+        }).join('');
+        
+      } catch(err) {
+        console.error("History fetch error:", err);
+        container.innerHTML = '<p class="text-rose-400">Error loading history.</p>';
+      }
+    }
+
+    async function deleteItem() {
+      const id = document.getElementById('itemId').value;
+      if (!id) return;
+      const item = items.find(i => i.id === id);
+      const itemName = item ? item.name : 'Unknown Item';
+
+      if (confirm(`Permanently delete "${itemName}"? This cannot be undone.`)) {
+        await logAction(id, itemName, 'Deleted item from inventory');
+        await db.collection('items').doc(id).delete();
+        closeModal('itemModal');
+      }
+    }
+
+    // --- 5. COMPREHENSIVE PRODUCT LOOKUP ENGINE (FAST TIMEOUT) ---
+    async function fetchWithTimeout(url, timeoutMs = 2500) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const response = await fetch(url, { signal: controller.signal });
+        clearTimeout(timer);
+        return response;
+      } catch (e) {
+        clearTimeout(timer);
+        return null;
+      }
+    }
+
+    async function fetchProductInfo(barcode) {
+      let cleanCode = barcode.trim();
+      const candidates = [cleanCode];
+      if (cleanCode.length === 12) candidates.push('0' + cleanCode);
+      else if (cleanCode.length === 13 && cleanCode.startsWith('0')) candidates.push(cleanCode.substring(1));
+
+      for (const code of candidates) {
+        try {
+          const res = await fetchWithTimeout(`https://world.openfoodfacts.org/api/v0/product/${code}.json`, 2500);
+          if (res && res.ok) {
+            const data = await res.json();
+            if (data && data.status === 1 && data.product) {
+              const p = data.product;
+              const brand = p.brands ? p.brands.split(',')[0].trim() : '';
+              const rawName = p.product_name || p.product_name_en || p.generic_name || '';
+              const fullName = brand && rawName && !rawName.toLowerCase().includes(brand.toLowerCase())
+                ? `${brand} ${rawName}`
+                : (rawName || brand);
+
+              if (fullName) {
+                return {
+                  barcode: barcode,
+                  name: fullName,
+                  image: p.image_front_small_url || p.image_front_thumb_url || p.image_front_url || '',
+                  ballparkPrice: ''
+                };
+              }
+            }
+          }
+        } catch (e) {}
+      }
+      return null;
+    }
+
+    async function handleManualLookup() {
+      const inputEl = document.getElementById('barcodeInput');
+      const val = inputEl.value.trim();
+      if (!val) return;
+
+      const searchBtn = document.getElementById('searchBtn');
+      const origText = searchBtn.innerText;
+      searchBtn.innerText = 'Searching...';
+
+      const existing = items.find(i => 
+        (i.barcode && i.barcode === val) || 
+        (val.length === 12 && i.barcode === '0' + val) ||
+        (i.barcode && i.barcode.length === 12 && '0' + i.barcode === val) ||
+        (i.name && i.name.toLowerCase() === val.toLowerCase())
+      );
+
+      if (existing) {
+        adjustCount(existing.id, 1);
+        inputEl.value = '';
+        searchBtn.innerText = origText;
+        alert(`✓ Added +1 to existing item: "${existing.name}" (Total: ${(Number(existing.currentCount) || 0) + 1})`);
+        return;
+      }
+
+      const productData = await fetchProductInfo(val);
+      searchBtn.innerText = origText;
+
+      openAddItemModal({
+        barcode: productData ? productData.barcode : val,
+        name: productData && productData.name ? productData.name : '', 
+        image: productData ? productData.image : '',
+        ballparkPrice: productData ? productData.ballparkPrice : ''
+      });
+      inputEl.value = '';
+    }
+
+    // --- 6. QUAGGA SCANNER ENGINE & CAMERA CLEANUP ---
+    function stopCameraStream() {
+      try {
+        Quagga.offDetected();
+        Quagga.stop();
+      } catch (e) {}
+      
+      const video = document.querySelector('#interactive video');
+      if (video && video.srcObject) {
+        video.srcObject.getTracks().forEach(track => track.stop());
+        video.srcObject = null;
+      }
+
+      const interactive = document.getElementById('interactive');
+      if (interactive) interactive.innerHTML = '';
+
+      isScannerRunning = false;
+      document.getElementById('reader-container').classList.add('hidden');
+    }
+
+    function toggleCameraScanner() {
+      const container = document.getElementById('reader-container');
+      
+      if (isScannerRunning) {
+        stopCameraStream();
+        return;
+      }
+
+      const interactive = document.getElementById('interactive');
+      if (interactive) interactive.innerHTML = '';
+      container.classList.remove('hidden');
+
+      Quagga.init({
+        inputStream: {
+          name: "Live",
+          type: "LiveStream",
+          target: document.querySelector('#interactive'),
+          constraints: {
+            facingMode: "environment",
+            width: { min: 640, ideal: 1280, max: 1920 },
+            height: { min: 480, ideal: 720, max: 1080 }
+          }
+        },
+        locator: {
+          patchSize: "medium",
+          halfSample: true
+        },
+        numOfWorkers: 2,
+        frequency: 10,
+        decoder: {
+          readers: [
+            "upc_reader",
+            "upc_e_reader",
+            "ean_reader",
+            "ean_8_reader",
+            "code_128_reader"
+          ]
+        },
+        locate: true
+      }, function(err) {
+        if (err) {
+          alert("Could not start camera. Check permissions and ensure HTTPS is used.");
+          stopCameraStream();
+          return;
+        }
+        Quagga.start();
+        isScannerRunning = true;
+      });
+
+      Quagga.offDetected();
+      Quagga.onDetected(function(result) {
+        if (result && result.codeResult && result.codeResult.code) {
+          const barcode = result.codeResult.code;
+          stopCameraStream();
+          
+          if (navigator.vibrate) navigator.vibrate(100);
+          document.getElementById('barcodeInput').value = barcode;
+          handleManualLookup();
+        }
+      });
+    }
+
+    // --- CUSTOM DROPDOWNS ---
+    function renderAssortmentDropdownOptions(filterText = '') {
+      const dropdown = document.getElementById('assortmentDropdown');
+      if (!dropdown) return;
+      
+      const filtered = assortments.filter(a => a.name.toLowerCase().includes(filterText.toLowerCase()));
+      
+      if (filtered.length === 0) {
+        dropdown.innerHTML = `<div class="px-3 py-2 text-xs text-slate-500 italic">No matching assortments found</div>`;
+        return;
+      }
+
+      dropdown.innerHTML = filtered.map(a => {
+        const safeName = a.name.replace(/'/g, "\\'");
+        return `<div class="px-3 py-2 text-sm cursor-pointer hover:bg-slate-700 text-slate-200 border-b border-slate-700/50 last:border-0" 
+                     onmousedown="event.preventDefault(); selectAssortment('${safeName}')">
+          ${a.name}
+        </div>`;
+      }).join('');
+    }
+
+    function showAssortmentDropdown() {
+      renderAssortmentDropdownOptions(document.getElementById('itemAssortment').value);
+      document.getElementById('assortmentDropdown').classList.remove('hidden');
+    }
+
+    function filterAssortmentDropdown() {
+      renderAssortmentDropdownOptions(document.getElementById('itemAssortment').value);
+    }
+
+    function hideAssortmentDropdown() {
+      setTimeout(() => {
+        const dd = document.getElementById('assortmentDropdown');
+        if (dd) dd.classList.add('hidden');
+      }, 250);
+    }
+
+    function selectAssortment(name) {
+      const input = document.getElementById('itemAssortment');
+      input.value = name;
+      document.getElementById('assortmentDropdown').classList.add('hidden');
+      input.blur();
+    }
+
+    function getUniqueStores() {
+      const stores = new Set();
+      items.forEach(i => {
+        if (i.store && i.store.trim() !== '') {
+          stores.add(i.store.trim());
+        }
+      });
+      return Array.from(stores).sort();
+    }
+
+    function renderStoreDropdownOptions(filterText = '') {
+      const dropdown = document.getElementById('storeDropdown');
+      if (!dropdown) return;
+      
+      const uniqueStores = getUniqueStores();
+      const filtered = uniqueStores.filter(s => s.toLowerCase().includes(filterText.toLowerCase()));
+      
+      if (filtered.length === 0) {
+        dropdown.innerHTML = `<div class="px-3 py-2 text-xs text-slate-500 italic">No matching stores found</div>`;
+        return;
+      }
+
+      dropdown.innerHTML = filtered.map(s => {
+        const safeName = s.replace(/'/g, "\\'");
+        return `<div class="px-3 py-2 text-sm cursor-pointer hover:bg-slate-700 text-slate-200 border-b border-slate-700/50 last:border-0" 
+                     onmousedown="event.preventDefault(); selectStore('${safeName}')">
+          ${s}
+        </div>`;
+      }).join('');
+    }
+
+    function showStoreDropdown() {
+      renderStoreDropdownOptions(document.getElementById('itemStore').value);
+      document.getElementById('storeDropdown').classList.remove('hidden');
+    }
+
+    function filterStoreDropdown() {
+      renderStoreDropdownOptions(document.getElementById('itemStore').value);
+    }
+
+    function hideStoreDropdown() {
+      setTimeout(() => {
+        const dd = document.getElementById('storeDropdown');
+        if (dd) dd.classList.add('hidden');
+      }, 250);
+    }
+
+    function selectStore(name) {
+      const input = document.getElementById('itemStore');
+      input.value = name;
+      document.getElementById('storeDropdown').classList.add('hidden');
+      input.blur();
+    }
+
+    // --- 7. ASSORTMENT & REORDER METRIC ENGINE ---
+    function isItemLowStock(item) {
+      if (item.mode === 'partial') {
+        const capacity = Number(item.fullCapacity) || 1;
+        const current = Number(item.currentUnits) || 0;
+        return ((current / capacity) * 100) <= (Number(item.reorderPct) || 0);
+      }
+      return (Number(item.currentCount) || 0) <= (Number(item.minCount) || 0);
+    }
+
+    // --- 8. INVENTORY RENDERING (SEARCH-ISOLATED METRICS) ---
+    function renderLists() {
+      const filter = document.getElementById('listFilter').value.trim().toLowerCase();
+      const inventoryList = document.getElementById('inventoryContainer');
+      const reorderList = document.getElementById('reorderContainer');
+      const storeBreakdown = document.getElementById('storePriceBreakdown');
+
+      let invHtml = '';
+      let reorderHtml = '';
+      let globalReorderCount = 0;
+      let globalStoreTotals = {};
+
+      const standaloneItems = [];
+      const groupedItems = {}; 
+
+      items.forEach(item => {
+        if (item.assortment && item.assortment.trim() !== '') {
+          const aName = item.assortment.trim().toLowerCase();
+          if (!groupedItems[aName]) {
+            const aConfig = assortments.find(a => a.name.trim().toLowerCase() === aName);
+            groupedItems[aName] = { 
+              name: aConfig ? aConfig.name : item.assortment.trim(),
+              threshold: aConfig ? Number(aConfig.threshold) || 0 : 0,
+              items: [] 
+            };
+          }
+          groupedItems[aName].items.push(item);
+        } else {
+          standaloneItems.push(item);
+        }
+      });
+
+      // 1. Calculate GLOBAL metrics
+      Object.values(groupedItems).forEach(group => {
+        const poolCount = group.items.reduce((sum, curr) => {
+          return sum + (curr.mode === 'partial' ? ((Number(curr.currentUnits) || 0) / (Number(curr.fullCapacity) || 1)) : (Number(curr.currentCount) || 0));
+        }, 0);
+
+        if (poolCount <= group.threshold) {
+          globalReorderCount++;
+          const pricedItems = group.items.filter(i => Number(i.price) > 0);
+          const candidate = pricedItems.length > 0 
+            ? pricedItems.reduce((prev, curr) => (Number(prev.price) < Number(curr.price)) ? prev : curr)
+            : group.items[0];
+
+          if (candidate) {
+            const storeName = candidate.store || 'Unassigned Store';
+            globalStoreTotals[storeName] = (globalStoreTotals[storeName] || 0) + (Number(candidate.price) || 0);
+          }
+        }
+      });
+
+      standaloneItems.forEach(item => {
+        if (isItemLowStock(item)) {
+          globalReorderCount++;
+          const storeName = item.store || 'Unassigned Store';
+          globalStoreTotals[storeName] = (globalStoreTotals[storeName] || 0) + (Number(item.price) || 0);
+        }
+      });
+
+      document.getElementById('reorderCountBadge').innerText = globalReorderCount;
+
+      let totalsHtml = '';
+      for (const [st, val] of Object.entries(globalStoreTotals)) {
+        totalsHtml += `<div class="flex justify-between py-0.5 border-b border-slate-700/50"><span>${st}:</span><span class="font-bold text-emerald-400">$${val.toFixed(2)}</span></div>`;
+      }
+      storeBreakdown.innerHTML = totalsHtml || '<p class="text-xs text-slate-500">No orders currently pending.</p>';
+
+      function createCard(item, isGrouped = false, groupNeedsReorder = false) {
+        const fallbackImg = "https://cdn-icons-png.flaticon.com/512/679/679821.png";
+        const thumb = item.image || fallbackImg;
+        const lastModDate = (item.lastModifiedAt && item.lastModifiedAt.toDate) 
+          ? item.lastModifiedAt.toDate().toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}) 
+          : 'recently';
+
+        const itemLow = isItemLowStock(item);
+        const showReorderBadge = !isGrouped ? itemLow : groupNeedsReorder;
+
+        return `
+          <div class="bg-slate-800 border ${showReorderBadge && !isGrouped ? 'border-amber-500/50' : 'border-slate-700'} rounded-lg p-3 flex flex-col gap-2 ${isGrouped ? 'mt-2' : ''}">
+            <div class="flex items-center justify-between gap-3">
+              <img src="${thumb}" class="w-12 h-12 rounded object-cover bg-slate-900 border border-slate-700" onerror="this.src='${fallbackImg}'" />
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-1.5">
+                  <span class="font-bold text-sm truncate">${item.name}</span>
+                  ${showReorderBadge && !isGrouped ? '<span class="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded font-medium">REORDER</span>' : ''}
+                </div>
+                <div class="text-xs text-slate-400 flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
+                  <span>Store: <strong class="text-slate-300">${item.store || 'None'}</strong></span>
+                  <span>Price: <strong class="text-slate-300">${item.price ? '$' + Number(item.price).toFixed(2) : 'N/A'}</strong></span>
+                </div>
+                <div class="text-xs mt-1 text-slate-300">
+                  ${item.mode === 'partial' 
+                    ? `Remaining: <strong>${item.currentUnits}</strong> / ${item.fullCapacity} (${Math.round(((Number(item.currentUnits)||0)/(Number(item.fullCapacity)||1))*100)}%)` 
+                    : `In Stock: <strong>${item.currentCount || 0}</strong>${!isGrouped ? ` (Min: ${item.minCount || 0})` : ''}`}
+                </div>
+              </div>
+              <div class="flex flex-col items-end gap-1.5">
+                <div class="flex items-center gap-1">
+                  <button onclick="adjustCount('${item.id}', -1)" class="w-7 h-7 bg-slate-700 hover:bg-slate-600 rounded flex items-center justify-center font-bold text-sm">-</button>
+                  <button onclick="adjustCount('${item.id}', 1)" class="w-7 h-7 bg-slate-700 hover:bg-slate-600 rounded flex items-center justify-center font-bold text-sm">+</button>
+                </div>
+                <button onclick="openEditItemModal('${item.id}')" class="text-[11px] text-slate-400 hover:text-amber-400 mt-1">Edit Item</button>
+              </div>
+            </div>
+            <div class="mt-1 pt-2 border-t border-slate-700/50 flex justify-between items-center text-[10px] text-slate-500">
+              <span>${item.lastModifiedBy ? `Updated by <strong class="text-slate-300">${item.lastModifiedBy}</strong> on ${lastModDate}` : 'Added to inventory'}</span>
+              <button onclick="showHistory('${item.id}')" class="text-blue-400 hover:text-blue-300 font-medium">History</button>
+            </div>
+          </div>
+        `;
+      }
+
+      // 2. Render groups
+      Object.values(groupedItems).forEach(group => {
+        let total = group.items.reduce((sum, curr) => sum + (curr.mode === 'partial' ? ((Number(curr.currentUnits)||0)/(Number(curr.fullCapacity)||1)) : (Number(curr.currentCount)||0)), 0);
+        total = Math.round(total * 100) / 100;
+        let needsReorder = total <= group.threshold;
+
+        let matchesFilter = !filter || group.name.toLowerCase().includes(filter) || group.items.some(i => i.name.toLowerCase().includes(filter) || (i.store && i.store.toLowerCase().includes(filter)));
+
+        if (matchesFilter) {
+          let visibleItems = filter 
+            ? group.items.filter(i => group.name.toLowerCase().includes(filter) || i.name.toLowerCase().includes(filter) || (i.store && i.store.toLowerCase().includes(filter)))
+            : group.items;
+
+          let groupHeader = `
+            <div class="bg-slate-800 border ${needsReorder ? 'border-amber-500/50' : 'border-blue-500/30'} rounded-lg p-3 flex flex-col gap-2 mb-2">
+              <div class="flex justify-between items-center pb-2">
+                <div>
+                  <span class="font-bold text-sm text-blue-400">📦 Assortment: ${group.name}</span>
+                  <div class="text-xs text-slate-400">Total in Pool: <strong class="${needsReorder ? 'text-amber-400' : 'text-emerald-400'}">${total}</strong> (Alert at: ${group.threshold})</div>
+                </div>
+                ${needsReorder ? '<span class="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded font-medium">REORDER</span>' : ''}
+              </div>
+              <div class="space-y-2 border-l-2 border-slate-700/50 pl-2 ml-1">
+          `;
+          
+          let groupContent = visibleItems.map(i => createCard(i, true, needsReorder)).join('');
+          let groupFooter = `</div></div>`;
+          
+          let fullGroupHtml = groupHeader + groupContent + groupFooter;
+          invHtml += fullGroupHtml;
+          
+          if (needsReorder) {
+            reorderHtml += fullGroupHtml;
+          }
+        }
+      });
+
+      // 3. Render standalone items
+      standaloneItems.forEach(item => {
+        const matchesFilter = !filter || item.name.toLowerCase().includes(filter) || (item.store && item.store.toLowerCase().includes(filter));
+        if (matchesFilter) {
+          const itemLow = isItemLowStock(item);
+          const card = createCard(item, false);
+          invHtml += card;
+          if (itemLow) {
+            reorderHtml += card;
+          }
+        }
+      });
+
+      inventoryList.innerHTML = invHtml || '<p class="text-slate-500 text-center py-6">No matching items in pantry.</p>';
+      reorderList.innerHTML = reorderHtml || '<p class="text-emerald-400 text-center py-6">All items stocked above minimum thresholds!</p>';
+    }
+
+    function renderAssortments() {
+      const container = document.getElementById('assortmentContainer');
+      container.innerHTML = assortments.map(a => {
+        const matches = items.filter(i => i.assortment && i.assortment.trim().toLowerCase() === a.name.trim().toLowerCase());
+        let total = matches.reduce((sum, curr) => sum + (curr.mode === 'partial' ? ((Number(curr.currentUnits)||0) / (Number(curr.fullCapacity)||1)) : (Number(curr.currentCount)||0)), 0);
+        total = Math.round(total * 100) / 100; 
+        const low = total <= (Number(a.threshold) || 0);
+        
+        const itemListHtml = matches.map(m => `
+          <div class="flex justify-between items-center text-xs py-1 border-b border-slate-700/30 last:border-0">
+            <span class="text-slate-300 truncate pr-2">${m.name}</span>
+            <span class="text-slate-400 font-mono shrink-0">${m.mode === 'partial' ? m.currentUnits : m.currentCount} qty</span>
+          </div>
+        `).join('');
+
+        return `
+          <div class="bg-slate-800 rounded-lg border ${low ? 'border-rose-500/50' : 'border-slate-700'} overflow-hidden mb-2">
+            <div class="p-3 flex justify-between items-center cursor-pointer hover:bg-slate-700/50 transition" onclick="document.getElementById('assort_items_${a.id}').classList.toggle('hidden')">
+              <div>
+                <p class="font-bold text-sm">${a.name} <span class="text-xs text-slate-500 ml-1">▼</span></p>
+                <p class="text-xs text-slate-400">Pool count: <strong class="${low ? 'text-rose-400' : 'text-emerald-400'}">${total}</strong> (Alert threshold: ${a.threshold})</p>
+              </div>
+              <button onclick="deleteAssortment(event, '${a.id}')" class="text-slate-500 hover:text-rose-400 text-xs px-2 py-1">&times; Remove</button>
+            </div>
+            <div id="assort_items_${a.id}" class="hidden bg-slate-900/50 px-3 py-2 border-t border-slate-700">
+              ${itemListHtml || '<p class="text-xs text-slate-500 italic">No items assigned to this assortment yet.</p>'}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // --- 9. MODALS & DATA SAVING ---
+    function switchTab(t) {
+      ['inventory', 'reorder', 'assortments'].forEach(tab => {
+        document.getElementById(`view-${tab}`).classList.add('hidden');
+        document.getElementById(`tab-${tab}`).classList.replace('text-emerald-400', 'text-slate-400');
+        document.getElementById(`tab-${tab}`).classList.replace('border-emerald-500', 'border-transparent');
+      });
+      document.getElementById(`view-${t}`).classList.remove('hidden');
+      document.getElementById(`tab-${t}`).classList.replace('text-slate-400', 'text-emerald-400');
+      document.getElementById(`tab-${t}`).classList.replace('border-transparent', 'border-emerald-500');
+    }
+
+    function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+    function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+    
+    function openProfileModal() { 
+      renderProfiles(); 
+      openModal('profileModal'); 
+    }
+
+    function toggleModeFields() {
+      const m = document.getElementById('itemMode').value;
+      if (m === 'partial') {
+        document.getElementById('countFields').classList.add('hidden');
+        document.getElementById('partialFields').classList.remove('hidden');
+      } else {
+        document.getElementById('countFields').classList.remove('hidden');
+        document.getElementById('partialFields').classList.add('hidden');
+      }
+    }
+
+    function openAddItemModal(prefill = {}) {
+      if (!checkUser()) return;
+      document.getElementById('itemModalTitle').innerText = "Add New Item";
+      document.getElementById('itemId').value = '';
+      document.getElementById('itemBarcode').value = prefill.barcode || '';
+      document.getElementById('itemName').value = prefill.name || '';
+      document.getElementById('itemImage').value = prefill.image || '';
+      document.getElementById('itemStore').value = '';
+      document.getElementById('itemAssortment').value = '';
+      document.getElementById('itemPrice').value = '';
+      document.getElementById('itemBallparkPrice').value = prefill.ballparkPrice || '';
+      document.getElementById('itemMode').value = 'count';
+      document.getElementById('itemCurrentCount').value = 1;
+      document.getElementById('itemMinCount').value = 1;
+      document.getElementById('itemFullCapacity').value = 10;
+      document.getElementById('itemCurrentUnits').value = 10;
+      document.getElementById('itemReorderPct').value = 30;
+      toggleModeFields();
+      
+      document.getElementById('deleteItemBtn').classList.add('hidden');
+      openModal('itemModal');
+    }
+
+    function openEditItemModal(id) {
+      if (!checkUser()) return;
+      const i = items.find(x => x.id === id);
+      if (!i) return;
+      document.getElementById('itemModalTitle').innerText = "Edit Item";
+      document.getElementById('itemId').value = i.id;
+      document.getElementById('itemBarcode').value = i.barcode || '';
+      document.getElementById('itemName').value = i.name || '';
+      document.getElementById('itemImage').value = i.image || '';
+      document.getElementById('itemStore').value = i.store || '';
+      document.getElementById('itemAssortment').value = i.assortment || '';
+      document.getElementById('itemPrice').value = i.price || '';
+      document.getElementById('itemBallparkPrice').value = i.ballparkPrice || '';
+      document.getElementById('itemMode').value = i.mode || 'count';
+      document.getElementById('itemCurrentCount').value = i.currentCount || 0;
+      document.getElementById('itemMinCount').value = i.minCount || 0;
+      document.getElementById('itemFullCapacity').value = i.fullCapacity || 10;
+      document.getElementById('itemCurrentUnits').value = i.currentUnits || 0;
+      document.getElementById('itemReorderPct').value = i.reorderPct || 30;
+      toggleModeFields();
+      
+      if (isUserAdmin()) {
+        document.getElementById('deleteItemBtn').classList.remove('hidden');
+      } else {
+        document.getElementById('deleteItemBtn').classList.add('hidden');
+      }
+
+      openModal('itemModal');
+    }
+
+    async function saveItem() {
+      const id = document.getElementById('itemId').value;
+      const docData = {
+        barcode: document.getElementById('itemBarcode').value.trim(),
+        name: document.getElementById('itemName').value.trim(),
+        image: document.getElementById('itemImage').value.trim(),
+        store: document.getElementById('itemStore').value.trim(),
+        assortment: document.getElementById('itemAssortment').value.trim(),
+        price: parseFloat(document.getElementById('itemPrice').value) || 0,
+        ballparkPrice: parseFloat(document.getElementById('itemBallparkPrice').value) || 0,
+        mode: document.getElementById('itemMode').value,
+        currentCount: parseInt(document.getElementById('itemCurrentCount').value) || 0,
+        minCount: parseInt(document.getElementById('itemMinCount').value) || 0,
+        fullCapacity: parseFloat(document.getElementById('itemFullCapacity').value) || 1,
+        currentUnits: parseFloat(document.getElementById('itemCurrentUnits').value) || 0,
+        reorderPct: parseInt(document.getElementById('itemReorderPct').value) || 0,
+        lastModifiedBy: currentUser,
+        lastModifiedAt: firebase.firestore.FieldValue.serverTimestamp()
+      };
+
+      if (!docData.name) return alert('Item name required');
+
+      if (id) {
+        await db.collection('items').doc(id).update(docData);
+        logAction(id, docData.name, 'Edited item details');
+      } else {
+        const ref = await db.collection('items').add(docData);
+        logAction(ref.id, docData.name, 'Added item to stock');
+      }
+      closeModal('itemModal');
+    }
+
+    function openCreateAssortmentModal() { openModal('assortmentModal'); }
+    async function saveAssortment() {
+      const name = document.getElementById('assortmentName').value.trim();
+      const threshold = parseInt(document.getElementById('assortmentThreshold').value) || 1;
+      if (!name) return;
+      await db.collection('assortments').add({ name, threshold });
+      document.getElementById('assortmentName').value = '';
+      document.getElementById('assortmentThreshold').value = '';
+      closeModal('assortmentModal');
+    }
+
+    async function deleteAssortment(event, id) {
+      event.stopPropagation();
+      if (confirm('Delete this assortment?')) {
+        await db.collection('assortments').doc(id).delete();
+      }
+    }
+  </script>
 </body>
 </html>
-
